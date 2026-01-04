@@ -6,7 +6,7 @@ import { MediapipeService } from '../../services/mediapipe';
   standalone: true,
   template: `
     <div class="video-container">
-      <video #videoElement autoplay playsinline></video>
+      <video #videoElement autoplay playsinline muted></video>
       <canvas #canvasElement class="overlay-canvas"></canvas>
     </div>
   `,
@@ -52,6 +52,7 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   private isProcessing = false;
   private lastVideoTime = -1;
   private canvasCtx!: CanvasRenderingContext2D;
+  private videoReady = false;
 
   // Conexiones del esqueleto corporal
   private readonly POSE_CONNECTIONS = [
@@ -69,23 +70,28 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   constructor(private mediapipeService: MediapipeService) {}
 
   async ngOnInit(): Promise<void> {
-    await this.mediapipeService.initialize();
+    console.log('🔵 CameraFeed: Iniciando MediaPipe...');
+    try {
+      await this.mediapipeService.initialize();
+      console.log('✅ CameraFeed: MediaPipe inicializado correctamente');
+    } catch (error) {
+      console.error('❌ CameraFeed: Error al inicializar MediaPipe', error);
+    }
   }
 
   async ngAfterViewInit(): Promise<void> {
     await this.startCamera();
-    this.setupCanvas();
-    this.processVideo();
   }
 
   private setupCanvas(): void {
     const canvas = this.canvasElement.nativeElement;
     const video = this.videoElement.nativeElement;
 
-    canvas.width = video.videoWidth || 1280;
-    canvas.height = video.videoHeight || 720;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
 
     this.canvasCtx = canvas.getContext('2d')!;
+    console.log('✅ Canvas configurado:', { width: canvas.width, height: canvas.height });
   }
 
   private async startCamera(): Promise<void> {
@@ -100,13 +106,33 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
 
       this.videoElement.nativeElement.srcObject = this.stream;
 
-      this.videoElement.nativeElement.onloadedmetadata = () => {
-        this.videoElement.nativeElement.play();
-        this.setupCanvas();
+      // Esperar a que el video tenga dimensiones válidas
+      this.videoElement.nativeElement.onloadeddata = async () => {
+        try {
+          await this.videoElement.nativeElement.play();
+          const video = this.videoElement.nativeElement;
+
+          console.log('✅ Video cargado:', {
+            videoWidth: video.videoWidth,
+            videoHeight: video.videoHeight
+          });
+
+          // Solo proceder si el video tiene dimensiones válidas
+          if (video.videoWidth > 0 && video.videoHeight > 0) {
+            this.videoReady = true;
+            this.setupCanvas();
+            console.log('🔵 Iniciando processVideo...');
+            this.processVideo();
+          } else {
+            console.error('❌ Video sin dimensiones válidas');
+          }
+        } catch (error) {
+          console.error('❌ Error al reproducir video:', error);
+        }
       };
 
     } catch (error) {
-      console.error('Error accessing camera:', error);
+      console.error('❌ Error accessing camera:', error);
     }
   }
 
@@ -114,11 +140,18 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
     const video = this.videoElement.nativeElement;
     const canvas = this.canvasElement.nativeElement;
 
-    if (!video || !this.mediapipeService.handLandmarker || !this.mediapipeService.poseLandmarker) {
+    // Verificar que todo está listo
+    if (!this.videoReady ||
+      !video ||
+      video.videoWidth === 0 ||
+      video.videoHeight === 0 ||
+      !this.mediapipeService.handLandmarker ||
+      !this.mediapipeService.poseLandmarker) {
       requestAnimationFrame(() => this.processVideo());
       return;
     }
 
+    // Actualizar tamaño del canvas si cambió
     if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
@@ -132,26 +165,30 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
 
       this.canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Detectar pose corporal
-      const poseResults = this.mediapipeService.poseLandmarker.detectForVideo(
+      try {
+        // Detectar pose corporal
+        const poseResults = this.mediapipeService.poseLandmarker.detectForVideo(
           video,
           performance.now()
-      );
+        );
 
-      if (poseResults.landmarks && poseResults.landmarks.length > 0) {
-        this.drawPose(poseResults.landmarks[0]);
-        this.poseDetected.emit(poseResults.landmarks[0]);
-      }
+        if (poseResults.landmarks && poseResults.landmarks.length > 0) {
+          this.drawPose(poseResults.landmarks[0]);
+          this.poseDetected.emit(poseResults.landmarks[0]);
+        }
 
-      // Detectar manos
-      const handResults = this.mediapipeService.handLandmarker.detectForVideo(
+        // Detectar manos
+        const handResults = this.mediapipeService.handLandmarker.detectForVideo(
           video,
           performance.now()
-      );
+        );
 
-      if (handResults.landmarks && handResults.landmarks.length > 0) {
-        this.drawHands(handResults);
-        this.handsDetected.emit(handResults.landmarks);
+        if (handResults.landmarks && handResults.landmarks.length > 0) {
+          this.drawHands(handResults);
+          this.handsDetected.emit(handResults.landmarks);
+        }
+      } catch (error) {
+        console.error('❌ Error en detección:', error);
       }
 
       this.isProcessing = false;
@@ -189,11 +226,11 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
       if (landmark.visibility > 0.5) {
         ctx.beginPath();
         ctx.arc(
-            landmark.x * canvas.width,
-            landmark.y * canvas.height,
-            6,
-            0,
-            2 * Math.PI
+          landmark.x * canvas.width,
+          landmark.y * canvas.height,
+          6,
+          0,
+          2 * Math.PI
         );
         ctx.fill();
       }
@@ -233,11 +270,11 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
       for (const landmark of landmarks) {
         ctx.beginPath();
         ctx.arc(
-            landmark.x * canvas.width,
-            landmark.y * canvas.height,
-            5,
-            0,
-            2 * Math.PI
+          landmark.x * canvas.width,
+          landmark.y * canvas.height,
+          5,
+          0,
+          2 * Math.PI
         );
         ctx.fill();
       }
