@@ -4,14 +4,11 @@ import { SceneViewerComponent } from './components/scene-viewer/scene-viewer';
 import { CameraFeedComponent } from './components/camera-feed/camera-feed';
 import { HeaderComponent } from './components/header/header';
 import { CategorySidebarComponent } from './components/category-sidebar/category-sidebar';
-import { GalleryBarComponent, GarmentItem } from './components/gallery-bar/gallery-bar';
+import { GalleryBarComponent } from './components/gallery-bar/gallery-bar';
 
 import { GarmentManagerService } from './services/garment-manager';
 import { Outfit } from '../domain/model/outfit';
 import { Garment } from '../domain/model/garment';
-import { GarmentType } from '../domain/enums/garment-type.enum';
-import { GarmentCategory } from '../domain/enums/garment-category.enum';
-import { GarmentSize } from '../domain/enums/garment-size.enum';
 
 @Component({
   selector: 'app-root',
@@ -77,32 +74,12 @@ export class App implements OnInit {
     this.selectedCategory = categoryId;
   }
 
-  async onGarmentSelected(item: GarmentItem): Promise<void> {
-    console.log('🔵 Prenda seleccionada:', item);
-
-    // Mapear categoría string a GarmentType enum
-    const typeMap: { [key: string]: GarmentType } = {
-      'chaquetas': GarmentType.JACKET,
-      'camisas': GarmentType.SHIRT,
-      'pantalones': GarmentType.PANTS,
-      'vestidos': GarmentType.DRESS
-    };
-
-    // Convertir GarmentItem a Garment
-    const garment = new Garment(
-      item.id,
-      item.name,
-      typeMap[item.category] || GarmentType.SHIRT,
-      GarmentCategory.UPPER_BODY,
-      GarmentSize.M,
-      '#000000',
-      item.modelPath,
-      item.thumbnail  // Pasar thumbnail como imagePath
-    );
+  async onGarmentSelected(garment: Garment): Promise<void> {
+    console.log('🔵 Prenda seleccionada:', garment);
 
     try {
       await this.garmentManager.loadGarmentModel(garment);
-      console.log('🟢 Prenda cargada:', item.name);
+      console.log('🟢 Prenda cargada:', garment.name);
 
       const outfit = this.garmentManager.getCurrentOutfit();
       if (outfit) {

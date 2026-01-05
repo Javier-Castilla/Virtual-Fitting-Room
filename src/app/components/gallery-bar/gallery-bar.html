@@ -7,7 +7,7 @@
       [class.selected]="selectedItemId === item.id"
       [attr.data-position]="getItemClass(i)"
       (click)="onItemClick(item, $event)">
-      <img [src]="item.thumbnail" [alt]="item.name" draggable="false">
+      <img [src]="item.imagePath" [alt]="item.name" draggable="false">
     </div>
   </div>
 </div>

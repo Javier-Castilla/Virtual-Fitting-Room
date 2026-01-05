@@ -1,13 +1,8 @@
 import { Component, Output, EventEmitter, Input, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
-
-export interface GarmentItem {
-  id: string;
-  name: string;
-  category: string;
-  thumbnail: string;
-  modelPath: string;
-}
+import { Garment } from '../../../domain/model/garment';
+import { GARMENTS_CATALOG } from '../../data/garments-catalog';
+import { GarmentType } from '../../../domain/enums/garment-type.enum';
 
 @Component({
   selector: 'app-gallery-bar',
@@ -18,7 +13,7 @@ export interface GarmentItem {
 })
 export class GalleryBarComponent implements AfterViewInit, OnDestroy {
   @Input() selectedCategory: string = 'all';
-  @Output() itemSelected = new EventEmitter<GarmentItem>();
+  @Output() itemSelected = new EventEmitter<Garment>();
   @ViewChild('galleryScroll') galleryScroll!: ElementRef<HTMLDivElement>;
 
   selectedItemId: string | null = null;
@@ -28,70 +23,26 @@ export class GalleryBarComponent implements AfterViewInit, OnDestroy {
   private scrollLeft = 0;
   private scrollTimeout: any;
 
-  items: GarmentItem[] = [
-    {
-      id: 'shirt_1',
-      name: 'Camisa Puntos',
-      category: 'camisas',
-      thumbnail: '/assets/clothes_images/FEM/camisas/camisa-1.jpg',
-      modelPath: '/models/shirt-dots.glb'
-    },
-    {
-      id: 'shirt_2',
-      name: 'Camisa Rayas',
-      category: 'camisas',
-      thumbnail: '/assets/clothes_images/FEM/camisas/camisa-2.jpg',
-      modelPath: '/models/shirt-striped.glb'
-    },
-    {
-      id: 'shirt_3',
-      name: 'Camisa Azul',
-      category: 'camisas',
-      thumbnail: '/assets/clothes_images/FEM/camisas/camisa-3.jpg',
-      modelPath: '/models/shirt-blue.glb'
-    },
-    {
-      id: 'shirt_4',
-      name: 'Camisa Blanca',
-      category: 'camisas',
-      thumbnail: '/assets/clothes_images/FEM/camisas/camisa-4.jpg',
-      modelPath: '/models/shirt-white.glb'
-    },
-    {
-      id: 'shirt_5',
-      name: 'Camisa Rosa',
-      category: 'camisas',
-      thumbnail: '/assets/clothes_images/FEM/camisas/camisa-5.jpg',
-      modelPath: '/models/shirt-pink.glb'
-    },
-    {
-      id: 'jacket_navy',
-      name: 'Chaqueta Azul Marino',
-      category: 'chaquetas',
-      thumbnail: '/assets/clothes_images/FEM/chaquetas/chaqueta-1.jpg',
-      modelPath: '/models/jacket-navy.glb'
-    },
-    {
-      id: 'jacket_brown',
-      name: 'Chaqueta Marrón',
-      category: 'chaquetas',
-      thumbnail: '/assets/clothes_images/FEM/chaquetas/chaqueta-2.jpg',
-      modelPath: '/models/jacket-brown.glb'
-    },
-    {
-      id: 'jacket_leather',
-      name: 'Chaqueta Cuero',
-      category: 'chaquetas',
-      thumbnail: '/assets/clothes_images/FEM/chaquetas/chaqueta-3.jpg',
-      modelPath: '/models/jacket-leather.glb'
-    }
-  ];
+  // Usar el catálogo
+  items: Garment[] = GARMENTS_CATALOG;
 
-  get filteredItems(): GarmentItem[] {
+  get filteredItems(): Garment[] {
     if (this.selectedCategory === 'all') {
       return this.items;
     }
-    return this.items.filter(item => item.category === this.selectedCategory);
+    // Filtrar por tipo usando el enum
+    return this.items.filter(item => this.matchesCategory(item));
+  }
+
+  private matchesCategory(item: Garment): boolean {
+    const categoryMap: { [key: string]: GarmentType } = {
+      'camisas': GarmentType.SHIRT,
+      'chaquetas': GarmentType.JACKET,
+      'pantalones': GarmentType.PANTS,
+      'vestidos': GarmentType.DRESS
+    };
+
+    return item.type === categoryMap[this.selectedCategory];
   }
 
   ngAfterViewInit(): void {
@@ -181,7 +132,7 @@ export class GalleryBarComponent implements AfterViewInit, OnDestroy {
     }, 200);
   }
 
-  onItemClick(item: GarmentItem, event?: MouseEvent): void {
+  onItemClick(item: Garment, event?: MouseEvent): void {
     if (this.isDragging) return;
 
     this.selectedItemId = item.id;
