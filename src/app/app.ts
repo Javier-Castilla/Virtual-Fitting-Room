@@ -5,6 +5,7 @@ import { CameraFeedComponent } from './components/camera-feed/camera-feed';
 import { HeaderComponent } from './components/header/header';
 import { CategorySidebarComponent } from './components/category-sidebar/category-sidebar';
 import { GalleryBarComponent, GarmentItem } from './components/gallery-bar/gallery-bar';
+
 import { GarmentManagerService } from './services/garment-manager';
 import { Outfit } from '../domain/model/outfit';
 import { Garment } from '../domain/model/garment';
@@ -79,6 +80,7 @@ export class App implements OnInit {
   async onGarmentSelected(item: GarmentItem): Promise<void> {
     console.log('🔵 Prenda seleccionada:', item);
 
+    // Mapear categoría string a GarmentType enum
     const typeMap: { [key: string]: GarmentType } = {
       'chaquetas': GarmentType.JACKET,
       'camisas': GarmentType.SHIRT,
@@ -86,6 +88,7 @@ export class App implements OnInit {
       'vestidos': GarmentType.DRESS
     };
 
+    // Convertir GarmentItem a Garment
     const garment = new Garment(
       item.id,
       item.name,
@@ -93,7 +96,8 @@ export class App implements OnInit {
       GarmentCategory.UPPER_BODY,
       GarmentSize.M,
       '#000000',
-      item.modelPath
+      item.modelPath,
+      item.thumbnail  // Pasar thumbnail como imagePath
     );
 
     try {

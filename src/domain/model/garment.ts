@@ -10,6 +10,7 @@ export class Garment {
     size: GarmentSize;
     color: string;
     modelPath: string;
+    imagePath: string;
 
     constructor(
         id: string,
@@ -18,7 +19,8 @@ export class Garment {
         category: GarmentCategory,
         size: GarmentSize,
         color: string,
-        modelPath: string
+        modelPath: string,
+        imagePath: string
     ) {
         this.id = id;
         this.name = name;
@@ -27,5 +29,6 @@ export class Garment {
         this.size = size;
         this.color = color;
         this.modelPath = modelPath;
+        this.imagePath = imagePath;
     }
 }
