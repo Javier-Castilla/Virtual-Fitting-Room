@@ -1,142 +1,183 @@
 import { NormalizedLandmark } from '@mediapipe/tasks-vision';
-import { GestureRecognizer, GestureType, GestureResult } from './gesture-recognizer.interface';
-import { FingerState } from '../models/finger-detector';
+import {
+    GestureType,
+    type GestureResult,
+    type GestureRecognizer,
+    type FingerState,
+    type HandGestureCategory
+} from './gesture-recognizer.interface';
 
 enum SwipeState {
     IDLE,
     FIST_DETECTED,
-    FIST_HELD
+    FIST_HELD,
+    WAIT_OPEN
 }
 
 interface HandSwipeState {
     state: SwipeState;
     fistFrameCount: number;
+    lostFistFrames: number;
     initialX: number | null;
     startTime: number | null;
-    handSize: number | null;
+    palmSize: number | null;
+    openFrameCount: number;
 }
 
 export class SwipeGestureRecognizer implements GestureRecognizer {
     private handStates = new Map<number, HandSwipeState>();
-    private readonly MIN_FIST_FRAMES = 5;
-    private readonly MIN_SWIPE_DISTANCE_RATIO = 0.5;
-    private readonly FIST_THRESHOLD = 0.18;
+
+    private readonly MIN_FIST_FRAMES = 2;
+    private readonly MAX_LOST_FIST_FRAMES = 3;
+
+    private readonly MIN_OPEN_FRAMES = 2;
+    private readonly MIN_SWIPE_DISTANCE_RATIO = 0.25;
+    private readonly MIN_GESTURE_SCORE = 0.55;
 
     private readonly VELOCITY_THRESHOLD_VERY_FAST = 1.2;
     private readonly VELOCITY_THRESHOLD_FAST = 0.8;
     private readonly VELOCITY_THRESHOLD_MEDIUM = 0.5;
 
-    recognize(landmarks: NormalizedLandmark[], fingers: FingerState, handIndex: number): GestureResult | null {
-        const isFist = this.isFist(landmarks);
-        const handState = this.getHandState(handIndex);
+    recognize(
+        landmarks: NormalizedLandmark[],
+        fingers: FingerState,
+        handIndex: number,
+        handGesture?: HandGestureCategory | null
+    ): GestureResult | null {
+        const s = this.getHandState(handIndex);
 
-        switch (handState.state) {
-            case SwipeState.IDLE:
-                if (isFist) {
-                    handState.state = SwipeState.FIST_DETECTED;
-                    handState.fistFrameCount = 1;
-                    console.log('✊ Puño detectado (mano ' + handIndex + ')');
-                }
-                break;
-
-            case SwipeState.FIST_DETECTED:
-                if (isFist) {
-                    handState.fistFrameCount++;
-                    if (handState.fistFrameCount >= this.MIN_FIST_FRAMES) {
-                        handState.state = SwipeState.FIST_HELD;
-                        handState.initialX = landmarks[0].x;
-                        handState.startTime = Date.now();
-                        handState.handSize = this.calculateHandSize(landmarks);
-                        console.log('🔒 Puño mantenido, posición inicial:', handState.initialX);
-                        console.log('📐 Tamaño de mano:', handState.handSize?.toFixed(3));
-                    }
-                } else {
-                    console.log('❌ Puño perdido');
-                    this.resetHandState(handIndex);
-                }
-                break;
-
-            case SwipeState.FIST_HELD:
-                if (isFist && handState.initialX !== null && handState.startTime !== null && handState.handSize !== null) {
-                    const distance = Math.abs(landmarks[0].x - handState.initialX);
-                    const deltaX = landmarks[0].x - handState.initialX;
-                    const minDistance = handState.handSize * this.MIN_SWIPE_DISTANCE_RATIO;
-
-                    console.log('📏 Distancia:', distance.toFixed(3), 'Mínimo:', minDistance.toFixed(3));
-
-                    if (distance > minDistance) {
-                        const elapsedTime = (Date.now() - handState.startTime) / 1000;
-                        const velocity = distance / elapsedTime;
-
-                        const intensity = this.calculateIntensity(velocity);
-                        const gestureType = deltaX > 0 ? GestureType.SWIPE_RIGHT : GestureType.SWIPE_LEFT;
-
-                        console.log('✅ Gesto confirmado:', gestureType);
-                        console.log('⚡ Velocidad:', velocity.toFixed(2), 'unidades/s');
-                        console.log('🎯 Intensidad:', intensity, 'elementos');
-
-                        this.resetHandState(handIndex);
-
-                        return {
-                            type: gestureType,
-                            intensity: intensity
-                        };
-                    }
-                } else {
-                    console.log('❌ Puño perdido durante deslizamiento');
-                    this.resetHandState(handIndex);
-                }
-                break;
+        const palmSize = this.calculatePalmSize(landmarks);
+        if (palmSize < 1e-6) {
+            this.reset(handIndex);
+            return null;
         }
 
-        return null;
+        const isFist =
+            !!handGesture &&
+            handGesture.categoryName === 'Closed_Fist' &&
+            handGesture.score >= this.MIN_GESTURE_SCORE;
+
+        const isOpenHand =
+            !!handGesture &&
+            handGesture.categoryName === 'Open_Palm' &&
+            handGesture.score >= this.MIN_GESTURE_SCORE;
+
+        const isUnknown = !isFist && !isOpenHand;
+
+        if (s.state === SwipeState.WAIT_OPEN) {
+            s.openFrameCount = isOpenHand ? s.openFrameCount + 1 : 0;
+            if (s.openFrameCount >= this.MIN_OPEN_FRAMES) {
+                this.reset(handIndex);
+            }
+            return null;
+        }
+
+        switch (s.state) {
+            case SwipeState.IDLE:
+                if (isFist) {
+                    s.state = SwipeState.FIST_DETECTED;
+                    s.fistFrameCount = 1;
+                    s.lostFistFrames = 0;
+                }
+                return null;
+
+            case SwipeState.FIST_DETECTED:
+                if (isOpenHand) {
+                    s.state = SwipeState.WAIT_OPEN;
+                    s.openFrameCount = 0;
+                    s.fistFrameCount = 0;
+                    s.lostFistFrames = 0;
+                    s.initialX = null;
+                    s.startTime = null;
+                    s.palmSize = null;
+                    return null;
+                }
+
+                if (isFist) {
+                    s.lostFistFrames = 0;
+                    s.fistFrameCount++;
+                    if (s.fistFrameCount >= this.MIN_FIST_FRAMES) {
+                        s.state = SwipeState.FIST_HELD;
+                        s.initialX = landmarks[0].x;
+                        s.startTime = Date.now();
+                        s.palmSize = palmSize;
+                    }
+                    return null;
+                }
+
+                if (isUnknown) {
+                    s.lostFistFrames++;
+                    if (s.lostFistFrames > this.MAX_LOST_FIST_FRAMES) {
+                        this.reset(handIndex);
+                    }
+                    return null;
+                }
+
+                return null;
+
+            case SwipeState.FIST_HELD:
+                if (isOpenHand) {
+                    s.state = SwipeState.WAIT_OPEN;
+                    s.openFrameCount = 0;
+                    s.fistFrameCount = 0;
+                    s.lostFistFrames = 0;
+                    s.initialX = null;
+                    s.startTime = null;
+                    s.palmSize = null;
+                    return null;
+                }
+
+                if (isFist) {
+                    s.lostFistFrames = 0;
+                } else {
+                    s.lostFistFrames++;
+                    if (s.lostFistFrames > this.MAX_LOST_FIST_FRAMES) {
+                        this.reset(handIndex);
+                        return null;
+                    }
+                }
+
+                if (s.initialX === null || s.startTime === null || s.palmSize === null) {
+                    this.reset(handIndex);
+                    return null;
+                }
+
+                const dx = landmarks[0].x - s.initialX;
+                const distance = Math.abs(dx);
+                const minDistance = s.palmSize * this.MIN_SWIPE_DISTANCE_RATIO;
+
+                if (distance >= minDistance) {
+                    const elapsed = (Date.now() - s.startTime) / 1000;
+                    const velocity = distance / Math.max(elapsed, 1e-3);
+
+                    const intensity = this.calculateIntensity(velocity);
+                    const type = dx > 0 ? GestureType.SWIPE_RIGHT : GestureType.SWIPE_LEFT;
+
+                    s.state = SwipeState.WAIT_OPEN;
+                    s.openFrameCount = 0;
+                    s.fistFrameCount = 0;
+                    s.lostFistFrames = 0;
+                    s.initialX = null;
+                    s.startTime = null;
+                    s.palmSize = null;
+
+                    return { type, intensity };
+                }
+
+                return null;
+
+            default:
+                return null;
+        }
     }
 
     isActive(handIndex: number): boolean {
-        const state = this.handStates.get(handIndex);
-        return state !== undefined && state.state !== SwipeState.IDLE;
-    }
-
-    private calculateHandSize(landmarks: NormalizedLandmark[]): number {
-        const wrist = landmarks[0];
-        const middleFingerTip = landmarks[12];
-
-        return Math.sqrt(
-            Math.pow(middleFingerTip.x - wrist.x, 2) +
-            Math.pow(middleFingerTip.y - wrist.y, 2)
-        );
-    }
-
-    private calculateIntensity(velocity: number): number {
-        if (velocity >= this.VELOCITY_THRESHOLD_VERY_FAST) {
-            return 4;
-        } else if (velocity >= this.VELOCITY_THRESHOLD_FAST) {
-            return 3;
-        } else if (velocity >= this.VELOCITY_THRESHOLD_MEDIUM) {
-            return 2;
-        } else {
-            return 1;
-        }
+        const s = this.handStates.get(handIndex);
+        return !!s && s.state !== SwipeState.IDLE;
     }
 
     reset(handIndex: number): void {
-        this.resetHandState(handIndex);
-    }
-
-    private isFist(landmarks: NormalizedLandmark[]): boolean {
-        const wrist = landmarks[0];
-        const fingertips = [4, 8, 12, 16, 20];
-
-        const distances = fingertips.map(idx => {
-            const tip = landmarks[idx];
-            return Math.sqrt(
-                Math.pow(tip.x - wrist.x, 2) +
-                Math.pow(tip.y - wrist.y, 2)
-            );
-        });
-
-        const avgDistance = distances.reduce((a, b) => a + b, 0) / distances.length;
-        return avgDistance < this.FIST_THRESHOLD;
+        this.handStates.delete(handIndex);
     }
 
     private getHandState(handIndex: number): HandSwipeState {
@@ -144,15 +185,26 @@ export class SwipeGestureRecognizer implements GestureRecognizer {
             this.handStates.set(handIndex, {
                 state: SwipeState.IDLE,
                 fistFrameCount: 0,
+                lostFistFrames: 0,
                 initialX: null,
                 startTime: null,
-                handSize: null
+                palmSize: null,
+                openFrameCount: 0
             });
         }
         return this.handStates.get(handIndex)!;
     }
 
-    private resetHandState(handIndex: number): void {
-        this.handStates.delete(handIndex);
+    private calculatePalmSize(landmarks: NormalizedLandmark[]): number {
+        const wrist = landmarks[0];
+        const middleMcp = landmarks[9];
+        return Math.hypot(middleMcp.x - wrist.x, middleMcp.y - wrist.y);
+    }
+
+    private calculateIntensity(velocity: number): number {
+        if (velocity >= this.VELOCITY_THRESHOLD_VERY_FAST) return 4;
+        if (velocity >= this.VELOCITY_THRESHOLD_FAST) return 3;
+        if (velocity >= this.VELOCITY_THRESHOLD_MEDIUM) return 2;
+        return 1;
     }
 }

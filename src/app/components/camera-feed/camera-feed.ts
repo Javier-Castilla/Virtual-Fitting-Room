@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, ViewChild, ElementRef, Output, EventEmitter, AfterViewInit } from '@angular/core';
 import { MediapipeService } from '../../services/mediapipe';
-import { GestureDetectorService, GestureType, type GestureResult } from '../../services/gesture-detection';
+import { GestureDetectorService, type GestureResult } from '../../services/gesture-detection';
+import type { HandGestureCategory } from '../../services/gesture-detection';
 
 @Component({
   selector: 'app-camera-feed',
@@ -46,7 +47,9 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
           facingMode: 'user'
         }
       });
+
       this.videoElement.nativeElement.srcObject = this.stream;
+      await this.videoElement.nativeElement.play();
     } catch (error) {
       console.error('Error al acceder a la cámara:', error);
     }
@@ -56,23 +59,41 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
     const video = this.videoElement.nativeElement;
 
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      const results = this.mediapipeService.handLandmarker?.detectForVideo(
-          video,
-          performance.now()
-      );
+      const ts = performance.now();
 
-      if (results?.landmarks && results.landmarks.length > 0) {
-        this.gestureDetector.detectGesture(results.landmarks);
+      const handResults = this.mediapipeService.handLandmarker?.detectForVideo(video, ts);
+
+      const gestureResults = this.mediapipeService.gestureRecognizer?.recognizeForVideo(video, ts);
+
+      const landmarks = handResults?.landmarks ?? [];
+      const gestures: Array<HandGestureCategory | null> = [];
+
+      if (gestureResults?.gestures && gestureResults.gestures.length > 0) {
+        for (let i = 0; i < gestureResults.gestures.length; i++) {
+          const top = gestureResults.gestures[i]?.[0];
+          if (top) {
+            gestures[i] = { categoryName: top.categoryName, score: top.score };
+          } else {
+            gestures[i] = null;
+          }
+        }
+      }
+
+      if (landmarks.length > 0) {
+        this.gestureDetector.detectGesture(landmarks, gestures);
+
         const currentState = this.gestureDetector.getCurrentState();
         this.gestureStateChanged.emit(currentState);
-        this.drawLandmarks(results.landmarks);
+
+        this.drawLandmarks(landmarks);
       } else {
         this.clearCanvas();
+        this.gestureDetector.detectGesture([]);
       }
     }
 
     this.animationId = requestAnimationFrame(this.processFrame);
-  }
+  };
 
   private drawLandmarks(landmarks: any[]) {
     const canvas = this.canvasElement.nativeElement;
@@ -80,6 +101,7 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!ctx) return;
 
     const video = this.videoElement.nativeElement;
+
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
