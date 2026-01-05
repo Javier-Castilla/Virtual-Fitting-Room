@@ -2,6 +2,9 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { SceneViewerComponent } from './components/scene-viewer/scene-viewer';
 import { CameraFeedComponent } from './components/camera-feed/camera-feed';
+import { HeaderComponent } from './components/header/header';
+import { CategorySidebarComponent } from './components/category-sidebar/category-sidebar';
+import { GalleryBarComponent, GarmentItem } from './components/gallery-bar/gallery-bar';
 import { GarmentManagerService } from './services/garment-manager';
 import { Outfit } from '../domain/model/outfit';
 import { Garment } from '../domain/model/garment';
@@ -12,18 +15,33 @@ import { GarmentSize } from '../domain/enums/garment-size.enum';
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, SceneViewerComponent, CameraFeedComponent],
+  imports: [
+    CommonModule,
+    SceneViewerComponent,
+    CameraFeedComponent,
+    HeaderComponent,
+    CategorySidebarComponent,
+    GalleryBarComponent
+  ],
   template: `
     <div class="app-container">
       <app-camera-feed
-          (poseDetected)="onPoseDetected($event)"
-          (handsDetected)="onHandsDetected($event)">
+        (poseDetected)="onPoseDetected($event)"
+        (handsDetected)="onHandsDetected($event)">
       </app-camera-feed>
+
       <app-scene-viewer></app-scene-viewer>
-      <div class="controls">
-        <button (click)="loadJacket()">Cargar Chaqueta</button>
-        <button (click)="removeJacket()">Quitar Chaqueta</button>
-      </div>
+
+      <app-header (menuClick)="onMenuClick()"></app-header>
+
+      <app-category-sidebar
+        (categorySelected)="onCategorySelected($event)">
+      </app-category-sidebar>
+
+      <app-gallery-bar
+        [selectedCategory]="selectedCategory"
+        (itemSelected)="onGarmentSelected($event)">
+      </app-gallery-bar>
     </div>
   `,
   styles: [`
@@ -33,32 +51,11 @@ import { GarmentSize } from '../domain/enums/garment-size.enum';
       height: 100vh;
       overflow: hidden;
     }
-    .controls {
-      position: absolute;
-      top: 20px;
-      right: 20px;
-      z-index: 100;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    button {
-      padding: 10px 20px;
-      background: #007bff;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 14px;
-    }
-    button:hover {
-      background: #0056b3;
-    }
   `]
 })
 export class App implements OnInit {
   private currentPose: any[] | null = null;
-  private jacketId = 'jacket_1';
+  selectedCategory: string = 'camisas';
 
   constructor(private garmentManager: GarmentManagerService) {
     console.log('🔵 AppComponent: Constructor');
@@ -70,49 +67,52 @@ export class App implements OnInit {
     this.garmentManager.setOutfit(outfit);
   }
 
-  async loadJacket(): Promise<void> {
-    console.log('🔵 AppComponent: Botón clickeado - Cargar Chaqueta');
+  onMenuClick(): void {
+    console.log('🔵 Menu hamburguesa clickeado');
+  }
 
-    const jacket = new Garment(
-        this.jacketId,
-        'Chaqueta Negra',
-        GarmentType.JACKET,
-        GarmentCategory.UPPER_BODY,
-        GarmentSize.M,
-        '#000000',
-        '/models/jacket.glb'
+  onCategorySelected(categoryId: string): void {
+    console.log('🔵 Categoría seleccionada:', categoryId);
+    this.selectedCategory = categoryId;
+  }
+
+  async onGarmentSelected(item: GarmentItem): Promise<void> {
+    console.log('🔵 Prenda seleccionada:', item);
+
+    const typeMap: { [key: string]: GarmentType } = {
+      'chaquetas': GarmentType.JACKET,
+      'camisas': GarmentType.SHIRT,
+      'pantalones': GarmentType.PANTS,
+      'vestidos': GarmentType.DRESS
+    };
+
+    const garment = new Garment(
+      item.id,
+      item.name,
+      typeMap[item.category] || GarmentType.SHIRT,
+      GarmentCategory.UPPER_BODY,
+      GarmentSize.M,
+      '#000000',
+      item.modelPath
     );
 
-    console.log('🔵 AppComponent: Garment creado:', jacket);
-
     try {
-      await this.garmentManager.loadGarmentModel(jacket);
-      console.log('🟢 AppComponent: LoadGarmentModel completado');
+      await this.garmentManager.loadGarmentModel(garment);
+      console.log('🟢 Prenda cargada:', item.name);
 
       const outfit = this.garmentManager.getCurrentOutfit();
       if (outfit) {
         try {
-          outfit.addGarment(jacket);
-          console.log('🟢 AppComponent: Garment añadido al outfit');
+          outfit.addGarment(garment);
+          console.log('🟢 Prenda añadida al outfit');
         } catch (e) {
-          console.log('🟡 AppComponent: Reemplazando garment existente');
-          outfit.replaceGarment(jacket);
-          console.log('🟢 AppComponent: Garment reemplazado en outfit');
+          console.log('🟡 Reemplazando prenda existente');
+          outfit.replaceGarment(garment);
+          console.log('🟢 Prenda reemplazada');
         }
       }
     } catch (error) {
-      console.error('🔴 AppComponent: Error al cargar chaqueta', error);
-    }
-  }
-
-  removeJacket(): void {
-    console.log('🔵 AppComponent: Botón clickeado - Quitar Chaqueta');
-    this.garmentManager.removeGarment(this.jacketId);
-
-    const outfit = this.garmentManager.getCurrentOutfit();
-    if (outfit) {
-      outfit.removeGarment(this.jacketId);
-      console.log('🟢 AppComponent: Chaqueta removida del outfit');
+      console.error('🔴 Error al cargar prenda:', error);
     }
   }
 
@@ -120,11 +120,16 @@ export class App implements OnInit {
     this.currentPose = landmarks;
 
     if (this.currentPose) {
-      this.garmentManager.updateGarmentPosition(this.jacketId, this.currentPose);
+      const outfit = this.garmentManager.getCurrentOutfit();
+      if (outfit && outfit.garments.length > 0) {
+        outfit.garments.forEach(garment => {
+          this.garmentManager.updateGarmentPosition(garment.id, this.currentPose!);
+        });
+      }
     }
   }
 
   onHandsDetected(landmarks: any): void {
-    // console.log('Hands detected:', landmarks);
+    // Detectar gestos para interacciones futuras
   }
 }
