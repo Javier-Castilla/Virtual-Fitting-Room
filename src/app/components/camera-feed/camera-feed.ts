@@ -1,245 +1,93 @@
 import { Component, OnInit, OnDestroy, ViewChild, ElementRef, Output, EventEmitter, AfterViewInit } from '@angular/core';
 import { MediapipeService } from '../../services/mediapipe';
+import { GestureDetectorService, GestureType, type GestureResult } from '../../services/gesture-detection';
 
 @Component({
   selector: 'app-camera-feed',
   standalone: true,
-  template: `
-    <div class="video-container">
-      <video #videoElement autoplay playsinline muted></video>
-      <canvas #canvasElement class="overlay-canvas"></canvas>
-    </div>
-  `,
-  styles: [`
-    .video-container {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: -1;
-    }
-
-    video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      transform: scaleX(-1);
-    }
-
-    .overlay-canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      transform: scaleX(-1);
-      pointer-events: none;
-    }
-  `]
+  templateUrl: './camera-feed.html',
+  styleUrls: ['./camera-feed.css']
 })
 export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
-  @ViewChild('videoElement', { static: false })
-  videoElement!: ElementRef<HTMLVideoElement>;
+  @ViewChild('videoElement') videoElement!: ElementRef<HTMLVideoElement>;
+  @ViewChild('canvasElement') canvasElement!: ElementRef<HTMLCanvasElement>;
 
-  @ViewChild('canvasElement', { static: false })
-  canvasElement!: ElementRef<HTMLCanvasElement>;
+  @Output() gestureDetected = new EventEmitter<GestureResult>();
+  @Output() gestureStateChanged = new EventEmitter<string>();
 
-  @Output() poseDetected = new EventEmitter<any>();
-  @Output() handsDetected = new EventEmitter<any>();
+  private animationId?: number;
+  private stream?: MediaStream;
 
-  private stream: MediaStream | null = null;
-  private isProcessing = false;
-  private lastVideoTime = -1;
-  private canvasCtx!: CanvasRenderingContext2D;
-  private videoReady = false;
+  constructor(
+      private mediapipeService: MediapipeService,
+      private gestureDetector: GestureDetectorService
+  ) {}
 
-  // Conexiones del esqueleto corporal
-  private readonly POSE_CONNECTIONS = [
-    [0, 1], [1, 2], [2, 3], [3, 7],           // Cara izquierda
-    [0, 4], [4, 5], [5, 6], [6, 8],           // Cara derecha
-    [9, 10],                                   // Boca
-    [11, 12],                                  // Hombros
-    [11, 13], [13, 15], [15, 17], [15, 19], [15, 21], [17, 19], // Brazo izquierdo
-    [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [18, 20], // Brazo derecho
-    [11, 23], [12, 24], [23, 24],             // Torso
-    [23, 25], [25, 27], [27, 29], [27, 31], [29, 31], // Pierna izquierda
-    [24, 26], [26, 28], [28, 30], [28, 32], [30, 32]  // Pierna derecha
-  ];
+  async ngOnInit() {
+    await this.mediapipeService.initialize();
 
-  constructor(private mediapipeService: MediapipeService) {}
-
-  async ngOnInit(): Promise<void> {
-    console.log('🔵 CameraFeed: Iniciando MediaPipe...');
-    try {
-      await this.mediapipeService.initialize();
-      console.log('✅ CameraFeed: MediaPipe inicializado correctamente');
-    } catch (error) {
-      console.error('❌ CameraFeed: Error al inicializar MediaPipe', error);
-    }
+    this.gestureDetector.gestureDetected$.subscribe((result: GestureResult) => {
+      console.log('🎯 Gesto detectado:', result.type, 'Intensidad:', result.intensity);
+      this.gestureDetected.emit(result);
+    });
   }
 
-  async ngAfterViewInit(): Promise<void> {
+  async ngAfterViewInit() {
     await this.startCamera();
+    this.processFrame();
   }
 
-  private setupCanvas(): void {
-    const canvas = this.canvasElement.nativeElement;
-    const video = this.videoElement.nativeElement;
-
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-
-    this.canvasCtx = canvas.getContext('2d')!;
-    console.log('✅ Canvas configurado:', { width: canvas.width, height: canvas.height });
-  }
-
-  private async startCamera(): Promise<void> {
+  private async startCamera() {
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
-        audio: false
+          width: 1280,
+          height: 720,
+          facingMode: 'user'
+        }
       });
-
       this.videoElement.nativeElement.srcObject = this.stream;
-
-      // Esperar a que el video tenga dimensiones válidas
-      this.videoElement.nativeElement.onloadeddata = async () => {
-        try {
-          await this.videoElement.nativeElement.play();
-          const video = this.videoElement.nativeElement;
-
-          console.log('✅ Video cargado:', {
-            videoWidth: video.videoWidth,
-            videoHeight: video.videoHeight
-          });
-
-          // Solo proceder si el video tiene dimensiones válidas
-          if (video.videoWidth > 0 && video.videoHeight > 0) {
-            this.videoReady = true;
-            this.setupCanvas();
-            console.log('🔵 Iniciando processVideo...');
-            this.processVideo();
-          } else {
-            console.error('❌ Video sin dimensiones válidas');
-          }
-        } catch (error) {
-          console.error('❌ Error al reproducir video:', error);
-        }
-      };
-
     } catch (error) {
-      console.error('❌ Error accessing camera:', error);
+      console.error('Error al acceder a la cámara:', error);
     }
   }
 
-  private async processVideo(): Promise<void> {
+  private processFrame = () => {
     const video = this.videoElement.nativeElement;
-    const canvas = this.canvasElement.nativeElement;
 
-    // Verificar que todo está listo
-    if (!this.videoReady ||
-      !video ||
-      video.videoWidth === 0 ||
-      video.videoHeight === 0 ||
-      !this.mediapipeService.handLandmarker ||
-      !this.mediapipeService.poseLandmarker) {
-      requestAnimationFrame(() => this.processVideo());
-      return;
-    }
-
-    // Actualizar tamaño del canvas si cambió
-    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-    }
-
-    const currentTime = video.currentTime;
-
-    if (currentTime !== this.lastVideoTime && !this.isProcessing) {
-      this.isProcessing = true;
-      this.lastVideoTime = currentTime;
-
-      this.canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-
-      try {
-        // Detectar pose corporal
-        const poseResults = this.mediapipeService.poseLandmarker.detectForVideo(
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      const results = this.mediapipeService.handLandmarker?.detectForVideo(
           video,
           performance.now()
-        );
+      );
 
-        if (poseResults.landmarks && poseResults.landmarks.length > 0) {
-          this.drawPose(poseResults.landmarks[0]);
-          this.poseDetected.emit(poseResults.landmarks[0]);
-        }
-
-        // Detectar manos
-        const handResults = this.mediapipeService.handLandmarker.detectForVideo(
-          video,
-          performance.now()
-        );
-
-        if (handResults.landmarks && handResults.landmarks.length > 0) {
-          this.drawHands(handResults);
-          this.handsDetected.emit(handResults.landmarks);
-        }
-      } catch (error) {
-        console.error('❌ Error en detección:', error);
+      if (results?.landmarks && results.landmarks.length > 0) {
+        this.gestureDetector.detectGesture(results.landmarks);
+        const currentState = this.gestureDetector.getCurrentState();
+        this.gestureStateChanged.emit(currentState);
+        this.drawLandmarks(results.landmarks);
+      } else {
+        this.clearCanvas();
       }
-
-      this.isProcessing = false;
     }
 
-    requestAnimationFrame(() => this.processVideo());
+    this.animationId = requestAnimationFrame(this.processFrame);
   }
 
-  private drawPose(landmarks: any[]): void {
+  private drawLandmarks(landmarks: any[]) {
     const canvas = this.canvasElement.nativeElement;
-    const ctx = this.canvasCtx;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-    // Dibujar conexiones del cuerpo
-    ctx.strokeStyle = '#00FFFF'; // Cyan para el cuerpo
-    ctx.lineWidth = 3;
+    const video = this.videoElement.nativeElement;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
 
-    for (const [start, end] of this.POSE_CONNECTIONS) {
-      if (landmarks[start] && landmarks[end]) {
-        const startPoint = landmarks[start];
-        const endPoint = landmarks[end];
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Solo dibujar si ambos puntos tienen buena visibilidad
-        if (startPoint.visibility > 0.5 && endPoint.visibility > 0.5) {
-          ctx.beginPath();
-          ctx.moveTo(startPoint.x * canvas.width, startPoint.y * canvas.height);
-          ctx.lineTo(endPoint.x * canvas.width, endPoint.y * canvas.height);
-          ctx.stroke();
-        }
-      }
-    }
-
-    // Dibujar puntos del cuerpo
-    ctx.fillStyle = '#FFFF00'; // Amarillo para puntos del cuerpo
-    for (const landmark of landmarks) {
-      if (landmark.visibility > 0.5) {
-        ctx.beginPath();
-        ctx.arc(
-          landmark.x * canvas.width,
-          landmark.y * canvas.height,
-          6,
-          0,
-          2 * Math.PI
-        );
-        ctx.fill();
-      }
-    }
-  }
-
-  private drawHands(results: any): void {
-    const canvas = this.canvasElement.nativeElement;
-    const ctx = this.canvasCtx;
+    ctx.save();
+    ctx.scale(-1, 1);
+    ctx.translate(-canvas.width, 0);
 
     const connections = [
       [0, 1], [1, 2], [2, 3], [3, 4],
@@ -250,38 +98,50 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
       [5, 9], [9, 13], [13, 17]
     ];
 
-    for (const landmarks of results.landmarks) {
-      // Dibujar conexiones de las manos
-      ctx.strokeStyle = '#00FF00'; // Verde para manos
-      ctx.lineWidth = 2;
-
-      for (const [start, end] of connections) {
-        const startPoint = landmarks[start];
-        const endPoint = landmarks[end];
+    landmarks.forEach(handLandmarks => {
+      connections.forEach(([start, end]) => {
+        const startPoint = handLandmarks[start];
+        const endPoint = handLandmarks[end];
 
         ctx.beginPath();
         ctx.moveTo(startPoint.x * canvas.width, startPoint.y * canvas.height);
         ctx.lineTo(endPoint.x * canvas.width, endPoint.y * canvas.height);
+        ctx.strokeStyle = '#00FF00';
+        ctx.lineWidth = 3;
         ctx.stroke();
-      }
+      });
 
-      // Dibujar puntos de las manos
-      ctx.fillStyle = '#FF0000'; // Rojo para puntos de manos
-      for (const landmark of landmarks) {
+      handLandmarks.forEach((landmark: any, index: number) => {
         ctx.beginPath();
         ctx.arc(
-          landmark.x * canvas.width,
-          landmark.y * canvas.height,
-          5,
-          0,
-          2 * Math.PI
+            landmark.x * canvas.width,
+            landmark.y * canvas.height,
+            index === 0 ? 8 : 5,
+            0,
+            2 * Math.PI
         );
+        ctx.fillStyle = index === 0 ? '#FF0000' : '#00FF00';
         ctx.fill();
-      }
-    }
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      });
+    });
+
+    ctx.restore();
   }
 
-  ngOnDestroy(): void {
+  private clearCanvas() {
+    const canvas = this.canvasElement.nativeElement;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  ngOnDestroy() {
+    if (this.animationId) {
+      cancelAnimationFrame(this.animationId);
+    }
     if (this.stream) {
       this.stream.getTracks().forEach(track => track.stop());
     }

@@ -1,13 +1,9 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { SceneViewerComponent } from './components/scene-viewer/scene-viewer';
 import { CameraFeedComponent } from './components/camera-feed/camera-feed';
-import { GarmentManagerService } from './services/garment-manager';
-import { Outfit } from '../domain/model/outfit';
-import { Garment } from '../domain/model/garment';
-import { GarmentType } from '../domain/enums/garment-type.enum';
-import { GarmentCategory } from '../domain/enums/garment-category.enum';
-import { GarmentSize } from '../domain/enums/garment-size.enum';
+import { GestureType, type GestureResult } from "./services/gesture-detection";
+import { SaveOutfitCommand } from "../domain/control/SaveOutfitCommand";
 
 @Component({
   selector: 'app-root',
@@ -15,14 +11,18 @@ import { GarmentSize } from '../domain/enums/garment-size.enum';
   imports: [CommonModule, SceneViewerComponent, CameraFeedComponent],
   template: `
     <div class="app-container">
-      <app-camera-feed
-          (poseDetected)="onPoseDetected($event)"
-          (handsDetected)="onHandsDetected($event)">
-      </app-camera-feed>
       <app-scene-viewer></app-scene-viewer>
-      <div class="controls">
-        <button (click)="loadJacket()">Cargar Chaqueta</button>
-        <button (click)="removeJacket()">Quitar Chaqueta</button>
+
+      <app-camera-feed
+          (gestureDetected)="handleGesture($event)"
+          (gestureStateChanged)="currentGestureState = $event">
+      </app-camera-feed>
+
+      <div class="gesture-info">
+        <p>Estado: {{ currentGestureState }}</p>
+        <p>Último gesto: {{ lastGesture }}</p>
+        <p>Intensidad: {{ lastIntensity }}</p>
+        <p>Contador: {{ counter }}</p>
       </div>
     </div>
   `,
@@ -33,98 +33,60 @@ import { GarmentSize } from '../domain/enums/garment-size.enum';
       height: 100vh;
       overflow: hidden;
     }
-    .controls {
+
+    .gesture-info {
       position: absolute;
       top: 20px;
       right: 20px;
-      z-index: 100;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    button {
-      padding: 10px 20px;
-      background: #007bff;
+      background: rgba(0, 0, 0, 0.8);
       color: white;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 14px;
+      padding: 20px;
+      border-radius: 10px;
+      font-family: monospace;
+      font-size: 18px;
+      z-index: 1000;
+      min-width: 250px;
     }
-    button:hover {
-      background: #0056b3;
+
+    .gesture-info p {
+      margin: 8px 0;
     }
   `]
 })
-export class App implements OnInit {
-  private currentPose: any[] | null = null;
-  private jacketId = 'jacket_1';
+export class App {
+  currentGestureState = 'IDLE';
+  lastGesture = 'Ninguno';
+  lastIntensity = 0;
+  counter = 0;
 
-  constructor(private garmentManager: GarmentManagerService) {
-    console.log('🔵 AppComponent: Constructor');
-  }
+  private saveOutfitCommand = new SaveOutfitCommand();
 
-  ngOnInit(): void {
-    console.log('🔵 AppComponent: ngOnInit');
-    const outfit = new Outfit('o1', 'Mi Outfit');
-    this.garmentManager.setOutfit(outfit);
-  }
+  handleGesture(result: GestureResult) {
+    this.lastIntensity = result.intensity || 1;
 
-  async loadJacket(): Promise<void> {
-    console.log('🔵 AppComponent: Botón clickeado - Cargar Chaqueta');
+    switch(result.type) {
+      case GestureType.SWIPE_RIGHT:
+        this.counter += this.lastIntensity;
+        this.lastGesture = `➡️ DERECHA x${this.lastIntensity}`;
+        console.log('➡️ Swipe derecha, intensidad:', this.lastIntensity, 'contador:', this.counter);
+        break;
 
-    const jacket = new Garment(
-        this.jacketId,
-        'Chaqueta Negra',
-        GarmentType.JACKET,
-        GarmentCategory.UPPER_BODY,
-        GarmentSize.M,
-        '#000000',
-        '/models/jacket.glb'
-    );
+      case GestureType.SWIPE_LEFT:
+        this.counter -= this.lastIntensity;
+        this.lastGesture = `⬅️ IZQUIERDA x${this.lastIntensity}`;
+        console.log('⬅️ Swipe izquierda, intensidad:', this.lastIntensity, 'contador:', this.counter);
+        break;
 
-    console.log('🔵 AppComponent: Garment creado:', jacket);
+      case GestureType.POINTING:
+        this.lastGesture = '👆 SEÑALANDO';
+        console.log('👆 Gesto de señalar');
+        break;
 
-    try {
-      await this.garmentManager.loadGarmentModel(jacket);
-      console.log('🟢 AppComponent: LoadGarmentModel completado');
-
-      const outfit = this.garmentManager.getCurrentOutfit();
-      if (outfit) {
-        try {
-          outfit.addGarment(jacket);
-          console.log('🟢 AppComponent: Garment añadido al outfit');
-        } catch (e) {
-          console.log('🟡 AppComponent: Reemplazando garment existente');
-          outfit.replaceGarment(jacket);
-          console.log('🟢 AppComponent: Garment reemplazado en outfit');
-        }
-      }
-    } catch (error) {
-      console.error('🔴 AppComponent: Error al cargar chaqueta', error);
+      case GestureType.PEACE:
+        this.lastGesture = '✌️ PAZ - Guardando outfit';
+        console.log('✌️ Gesto de paz - Guardando outfit');
+        this.saveOutfitCommand.execute();
+        break;
     }
-  }
-
-  removeJacket(): void {
-    console.log('🔵 AppComponent: Botón clickeado - Quitar Chaqueta');
-    this.garmentManager.removeGarment(this.jacketId);
-
-    const outfit = this.garmentManager.getCurrentOutfit();
-    if (outfit) {
-      outfit.removeGarment(this.jacketId);
-      console.log('🟢 AppComponent: Chaqueta removida del outfit');
-    }
-  }
-
-  onPoseDetected(landmarks: any): void {
-    this.currentPose = landmarks;
-
-    if (this.currentPose) {
-      this.garmentManager.updateGarmentPosition(this.jacketId, this.currentPose);
-    }
-  }
-
-  onHandsDetected(landmarks: any): void {
-    // console.log('Hands detected:', landmarks);
   }
 }
