@@ -6,18 +6,22 @@ import { Outfit } from '../../domain/model/outfit';
 import { Garment } from '../../domain/model/garment';
 
 type LoadedGarment = {
-    root: THREE.Object3D;
+    root: THREE.Group;
+    inner: THREE.Object3D;
     baseWidth: number;
 };
 
 @Injectable({ providedIn: 'root' })
 export class GarmentManagerService {
     private currentOutfit: Outfit | null = null;
+
     private loaded: Map<string, LoadedGarment> = new Map();
 
     private smoothing = 0.35;
-    private mirrorX = true;
+
     private zPlane = 0;
+
+    private garmentWidthFactor = 1.15;
 
     constructor(
         private modelLoader: ModelLoaderService,
@@ -36,35 +40,35 @@ export class GarmentManagerService {
 
         inner.position.sub(center);
 
+        inner.rotation.set(0, 0, 0);
+        inner.rotateY(Math.PI);
+
         const root = new THREE.Group();
         root.name = `${garment.id}__root`;
         root.add(inner);
 
         const baseWidth = Math.max(size.x, 1e-6);
 
-        this.loaded.set(garment.id, { root, baseWidth });
+        this.loaded.set(garment.id, { root, inner, baseWidth });
         this.threeService.scene.add(root);
     }
 
-    updateGarmentFromPose2D(garmentId: string, pose: any[]): void {
+    updateGarmentPosition(garmentId: string, poseLandmarks: any[]): void {
         const entry = this.loaded.get(garmentId);
         if (!entry) return;
-        if (!pose || pose.length < 25) return;
+        if (!poseLandmarks || poseLandmarks.length < 25) return;
 
-        const ls = pose[11];
-        const rs = pose[12];
-        const lh = pose[23];
-        const rh = pose[24];
+        const ls = poseLandmarks[11];
+        const rs = poseLandmarks[12];
+        const lh = poseLandmarks[23];
+        const rh = poseLandmarks[24];
         if (!ls || !rs || !lh || !rh) return;
 
-        const centerX0 = (ls.x + rs.x) / 2;
-        const centerY0 = (ls.y + rs.y + lh.y + rh.y) / 4;
+        const centerX = (ls.x + rs.x) / 2;
+        const centerY = (ls.y + rs.y + lh.y + rh.y) / 4;
 
         const shoulderWidthN = Math.abs(rs.x - ls.x);
-        const shoulderAngle0 = Math.atan2(rs.y - ls.y, rs.x - ls.x);
-
-        const centerX = this.mirrorX ? 1 - centerX0 : centerX0;
-        const shoulderAngle = this.mirrorX ? -shoulderAngle0 : shoulderAngle0;
+        const shoulderAngle = Math.atan2(rs.y - ls.y, rs.x - ls.x);
 
         const cam = this.threeService.camera;
         const dist = Math.max(cam.position.z - this.zPlane, 0.25);
@@ -74,9 +78,9 @@ export class GarmentManagerService {
         const planeWidth = planeHeight * cam.aspect;
 
         const x = (centerX - 0.5) * planeWidth;
-        const y = (0.5 - centerY0) * planeHeight;
+        const y = (0.5 - centerY) * planeHeight;
 
-        const targetWidth = Math.max(shoulderWidthN * planeWidth, 1e-6);
+        const targetWidth = Math.max(shoulderWidthN * planeWidth * this.garmentWidthFactor, 1e-6);
         let s = targetWidth / entry.baseWidth;
         s = THREE.MathUtils.clamp(s, 0.02, 20);
 
@@ -85,11 +89,9 @@ export class GarmentManagerService {
 
         entry.root.position.lerp(targetPos, this.smoothing);
         entry.root.scale.lerp(targetScale, this.smoothing);
-        entry.root.rotation.set(0, 0, THREE.MathUtils.lerp(entry.root.rotation.z, shoulderAngle, this.smoothing));
-    }
 
-    updateGarmentPosition(garmentId: string, poseLandmarks: any[]): void {
-        this.updateGarmentFromPose2D(garmentId, poseLandmarks);
+        const targetRotZ = shoulderAngle;
+        entry.root.rotation.set(0, 0, THREE.MathUtils.lerp(entry.root.rotation.z, targetRotZ, this.smoothing));
     }
 
     removeGarment(garmentId: string): void {
