@@ -109,7 +109,6 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     ctx.save();
-    ctx.translate(-canvas.width, 0);
 
     if (poseLandmarks) this.drawPose(ctx, canvas.width, canvas.height, poseLandmarks);
     if (handsLandmarks.length > 0) this.drawHands(ctx, canvas.width, canvas.height, handsLandmarks);

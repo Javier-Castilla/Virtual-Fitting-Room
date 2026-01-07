@@ -75,6 +75,7 @@ export class GarmentManagerService {
 
         let shoulderAngle = Math.atan2(dy, dx);
         shoulderAngle = this.wrapToHalfPi(shoulderAngle);
+        shoulderAngle = -shoulderAngle;
 
         const cam = this.threeService.camera;
         const dist = Math.max(cam.position.z - this.zPlane, 0.25);
@@ -96,7 +97,11 @@ export class GarmentManagerService {
         entry.root.position.lerp(targetPos, this.smoothing);
         entry.root.scale.lerp(targetScale, this.smoothing);
 
-        entry.root.rotation.set(0, 0, THREE.MathUtils.lerp(entry.root.rotation.z, shoulderAngle, this.smoothing));
+        entry.root.rotation.set(
+            0,
+            0,
+            THREE.MathUtils.lerp(entry.root.rotation.z, shoulderAngle, this.smoothing)
+        );
     }
 
     private wrapToHalfPi(a: number): number {
