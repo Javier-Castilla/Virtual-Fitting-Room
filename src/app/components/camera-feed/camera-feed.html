@@ -1,8 +1,21 @@
 <div class="video-container">
-    <video #videoElement autoplay playsinline muted></video>
-    <canvas #canvasElement class="overlay-canvas"></canvas>
+  <video #videoElement autoplay playsinline muted></video>
+  <canvas #canvasElement class="overlay-canvas"></canvas>
 
-    <div class="debug">
-        Pose: {{ poseFrames }} | LastPoseLen: {{ lastPoseLen }} | Hands: {{ handsCount }}
+  <!-- ✅ VENTANA DE DEBUG MEJORADA -->
+  <div class="debug-panel">
+    <div class="debug-title">🎥 MediaPipe Status</div>
+    <div class="debug-row">
+      <span class="debug-label">Pose Frames:</span>
+      <span class="debug-value">{{ poseFrames }}</span>
     </div>
+    <div class="debug-row">
+      <span class="debug-label">Landmarks:</span>
+      <span class="debug-value">{{ lastPoseLen }}</span>
+    </div>
+    <div class="debug-row">
+      <span class="debug-label">Hands:</span>
+      <span class="debug-value" [class.active]="handsCount > 0">{{ handsCount }}</span>
+    </div>
+  </div>
 </div>

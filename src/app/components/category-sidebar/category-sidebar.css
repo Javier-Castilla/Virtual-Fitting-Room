@@ -1,0 +1,35 @@
+.category-sidebar {
+  position: fixed;
+  top: 120px;
+  right: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  z-index: 150;
+}
+
+.category-btn {
+  width: 250px;
+  padding: 18px 24px;
+  font-size: 18px;
+  font-weight: 600;
+  border: 2px solid #000;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  color: #000;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: center;
+}
+
+.category-btn:hover {
+  transform: translateX(-5px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.category-btn.active {
+  background: rgba(184, 179, 232, 0.95);
+  border-color: #4a5de8;
+  color: #000;
+}

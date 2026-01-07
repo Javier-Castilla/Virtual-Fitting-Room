@@ -1,0 +1,13 @@
+<div class="gallery-bar">
+  <div class="gallery-scroll" #galleryScroll>
+    <div
+      *ngFor="let item of filteredItems; let i = index"
+      class="gallery-item"
+      [class.center]="isItemInCenter(i)"
+      [class.selected]="selectedItemId === item.id"
+      [attr.data-position]="getItemClass(i)"
+      (click)="onItemClick(item, $event)">
+      <img [src]="item.imagePath" [alt]="item.name" draggable="false">
+    </div>
+  </div>
+</div>

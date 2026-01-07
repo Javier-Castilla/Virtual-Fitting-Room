@@ -1,0 +1,10 @@
+<p>category-sidebar works!</p>
+<div class="category-sidebar">
+  <button
+    *ngFor="let category of categories"
+    class="category-btn"
+    [class.active]="selectedCategoryId === category.id"
+    (click)="onCategoryClick(category)">
+    {{ category.label }}
+  </button>
+</div>

@@ -4,14 +4,10 @@ import {
   OnDestroy,
   ViewChild,
   ElementRef,
-  Output,
-  EventEmitter,
   AfterViewInit
 } from '@angular/core';
-
 import { MediapipeService } from '../../services/mediapipe';
-import { GestureDetectorService, type GestureResult } from '../../services/gesture-detection';
-import type { HandGestureCategory } from '../../services/gesture-detection';
+import { GestureDetectorService } from '../../services/gesture-detection/gesture-detector.service';
 
 @Component({
   selector: 'app-camera-feed',
@@ -23,9 +19,7 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('videoElement') videoElement!: ElementRef<HTMLVideoElement>;
   @ViewChild('canvasElement') canvasElement!: ElementRef<HTMLCanvasElement>;
 
-  @Output() gestureDetected = new EventEmitter<GestureResult>();
-  @Output() gestureStateChanged = new EventEmitter<string>();
-
+  // Propiedades públicas para el template
   poseFrames = 0;
   lastPoseLen = 0;
   handsCount = 0;
@@ -34,13 +28,14 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   private stream?: MediaStream;
 
   constructor(
-      private mediapipeService: MediapipeService,
-      private gestureDetector: GestureDetectorService
+    private mediapipeService: MediapipeService,
+    private gestureDetector: GestureDetectorService
   ) {}
 
   async ngOnInit(): Promise<void> {
+    console.log('🎥 Camera Feed: Inicializando MediaPipe...');
     await this.mediapipeService.initialize();
-    this.gestureDetector.gestureDetected$.subscribe((result: GestureResult) => this.gestureDetected.emit(result));
+    console.log('✅ MediaPipe inicializado');
   }
 
   async ngAfterViewInit(): Promise<void> {
@@ -49,13 +44,18 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private async startCamera(): Promise<void> {
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 1280, height: 720, facingMode: 'user' },
-      audio: false
-    });
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 1280, height: 720, facingMode: 'user' },
+        audio: false
+      });
 
-    this.videoElement.nativeElement.srcObject = this.stream;
-    await this.videoElement.nativeElement.play();
+      this.videoElement.nativeElement.srcObject = this.stream;
+      await this.videoElement.nativeElement.play();
+      console.log('✅ Cámara iniciada');
+    } catch (error) {
+      console.error('❌ Error al acceder a la cámara:', error);
+    }
   }
 
   private processFrame = (): void => {
@@ -65,6 +65,7 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
       const ts = performance.now();
 
       const pose = this.mediapipeService.detectPose(video, ts);
+
       if (pose.poseLandmarks) {
         this.poseFrames++;
         this.lastPoseLen = pose.poseLandmarks.length;
@@ -76,7 +77,7 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
       const handsLandmarks = handResults?.landmarks ?? [];
       this.handsCount = handsLandmarks.length;
 
-      const gestures: Array<HandGestureCategory | null> = [];
+      const gestures: Array<{ categoryName: string; score: number } | null> = [];
       if (gestureResults?.gestures?.length) {
         for (let i = 0; i < gestureResults.gestures.length; i++) {
           const top = gestureResults.gestures[i]?.[0];
@@ -86,7 +87,6 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
 
       if (handsLandmarks.length > 0) {
         this.gestureDetector.detectGesture(handsLandmarks, gestures);
-        this.gestureStateChanged.emit(this.gestureDetector.getCurrentState());
       } else {
         this.gestureDetector.detectGesture([]);
       }
@@ -107,7 +107,6 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
     canvas.height = video.videoHeight;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
     ctx.save();
 
     if (poseLandmarks) this.drawPose(ctx, canvas.width, canvas.height, poseLandmarks);
@@ -129,8 +128,10 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
     ctx.lineWidth = 4;
 
     for (const [a, b] of links) {
-      const pa = lm[a]; const pb = lm[b];
+      const pa = lm[a];
+      const pb = lm[b];
       if (!pa || !pb) continue;
+
       ctx.beginPath();
       ctx.moveTo(pa.x * w, pa.y * h);
       ctx.lineTo(pb.x * w, pb.y * h);
@@ -153,11 +154,20 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
       ctx.lineWidth = 3;
 
       for (const [a, b] of connections) {
-        const pa = hand[a]; const pb = hand[b];
+        const pa = hand[a];
+        const pb = hand[b];
+
         ctx.beginPath();
         ctx.moveTo(pa.x * w, pa.y * h);
         ctx.lineTo(pb.x * w, pb.y * h);
         ctx.stroke();
+      }
+
+      ctx.fillStyle = '#FF0000';
+      for (const landmark of hand) {
+        ctx.beginPath();
+        ctx.arc(landmark.x * w, landmark.y * h, 5, 0, 2 * Math.PI);
+        ctx.fill();
       }
     }
   }
@@ -165,5 +175,6 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     if (this.animationId) cancelAnimationFrame(this.animationId);
     this.stream?.getTracks().forEach((t) => t.stop());
+    console.log('🎥 Camera Feed: Destruido');
   }
 }

@@ -4,318 +4,261 @@ import { ModelLoaderService } from './model-loader';
 import { ThreejsService } from './threejs';
 import { Outfit } from '../../domain/model/outfit';
 import { Garment } from '../../domain/model/garment';
-import { GarmentCategory } from '../../domain/enums/garment-category.enum';
 
 type LoadedGarment = {
-    root: THREE.Group;
-    inner: THREE.Object3D;
-    baseWidth: number;
-    baseHeight: number;
-    referenceWidth: number;
-    category: GarmentCategory;
-    visible: boolean;
+  root: THREE.Group;
+  inner: THREE.Object3D;
+  baseWidth: number;
+  referenceShoulderWidth: number;
 };
 
 @Injectable({ providedIn: 'root' })
 export class GarmentManagerService {
-    private currentOutfit: Outfit | null = null;
-    private loaded: Map<string, LoadedGarment> = new Map();
-    private smoothing = 0.3;
-    private zPlane = 0; // ⭐ VUELTO A 0 (original)
+  private currentOutfit: Outfit | null = null;
+  private loaded: Map<string, LoadedGarment> = new Map();
+  private smoothing = 0.35;
+  private zPlane = 0;
+  private garmentWidthFactor = 1.15;
 
-    // ⭐ CONFIGURACIÓN ORIGINAL (casi sin cambios)
-    private categoryConfig: Record<GarmentCategory, {
-        widthFactor: number;
-        anchorLandmarks: number[];
-        scaleLandmarks: number[];
-    }> = {
-        [GarmentCategory.UPPER_BODY]: {
-            widthFactor: 1.3, // ⭐ Solo 10% más grande que tu original (1.2 → 1.3)
-            anchorLandmarks: [11, 12, 23, 24],
-            scaleLandmarks: [11, 12]
-        },
-        [GarmentCategory.LOWER_BODY]: {
-            widthFactor: 1.2, // ⭐ Original era 1.1, ahora 1.2
-            anchorLandmarks: [23, 24, 25, 26],
-            scaleLandmarks: [23, 24]
-        },
-        [GarmentCategory.FOOTWEAR]: {
-            widthFactor: 1.1, // ⭐ Original era 1.0, ahora 1.1
-            anchorLandmarks: [27, 28, 29, 30],
-            scaleLandmarks: [27, 28]
-        },
-        [GarmentCategory.FULL_BODY]: {
-            widthFactor: 1.25, // ⭐ Original era 1.15, ahora 1.25
-            anchorLandmarks: [11, 12, 23, 24],
-            scaleLandmarks: [11, 12]
-        },
-        [GarmentCategory.ACCESSORY]: {
-            widthFactor: 0.85,
-            anchorLandmarks: [0, 11, 12],
-            scaleLandmarks: [11, 12]
-        }
-    };
+  constructor(
+    private modelLoader: ModelLoaderService,
+    private threeService: ThreejsService
+  ) {}
 
-    constructor(
-        private modelLoader: ModelLoaderService,
-        private threeService: ThreejsService
-    ) {}
+  /**
+   * Carga un modelo 3D de prenda y lo añade a la escena
+   */
+  async loadGarmentModel(garment: Garment): Promise<void> {
+    console.log('📦 Cargando modelo:', garment.modelPath);
 
-    async loadGarmentModel(garment: Garment): Promise<void> {
-        const inner = await this.modelLoader.loadModel(garment.modelPath);
-        inner.name = garment.id;
-        inner.updateMatrixWorld(true);
-
-        const bbox = new THREE.Box3().setFromObject(inner);
-        const center = bbox.getCenter(new THREE.Vector3());
-        const size = bbox.getSize(new THREE.Vector3());
-
-        inner.position.sub(center);
-        inner.rotation.set(0, 0, 0);
-
-        const root = new THREE.Group();
-        root.name = `${garment.id}__root`;
-        root.add(inner);
-        root.visible = false; // Ocultar por defecto
-
-        const baseWidth = Math.max(size.x, 1e-6);
-        const baseHeight = Math.max(size.y, 1e-6);
-
-        this.loaded.set(garment.id, {
-            root,
-            inner,
-            baseWidth,
-            baseHeight,
-            referenceWidth: 0,
-            category: garment.category,
-            visible: false
-        });
-
-        this.threeService.scene.add(root);
-        console.log('👔 Prenda cargada (oculta):', garment.id, garment.category);
+    // Si ya existe, eliminarlo primero
+    if (this.loaded.has(garment.id)) {
+      this.removeGarment(garment.id);
     }
 
-    updateAllGarments(poseLandmarks2d: any[], poseLandmarks3d?: any[]): void {
-        if (!poseLandmarks2d || poseLandmarks2d.length < 33) return;
+    const inner = await this.modelLoader.loadModel(garment.modelPath);
+    inner.name = garment.id;
+    inner.updateMatrixWorld(true);
 
-        this.loaded.forEach((entry, garmentId) => {
-            if (entry.visible) {
-                this.updateGarmentByCategory(garmentId, entry, poseLandmarks2d, poseLandmarks3d);
-            }
-        });
+    // Calcular dimensiones y centrar el modelo
+    const bbox = new THREE.Box3().setFromObject(inner);
+    const center = bbox.getCenter(new THREE.Vector3());
+    const size = bbox.getSize(new THREE.Vector3());
+
+    inner.position.sub(center);
+    inner.rotation.set(0, 0, 0);
+
+    // Crear grupo root para transformaciones
+    const root = new THREE.Group();
+    root.name = `${garment.id}__root`;
+    root.add(inner);
+
+    const baseWidth = Math.max(size.x, 1e-6);
+
+    this.loaded.set(garment.id, {
+      root,
+      inner,
+      baseWidth,
+      referenceShoulderWidth: 0
+    });
+
+    this.threeService.scene.add(root);
+    console.log('✅ Modelo cargado y añadido a la escena:', garment.id);
+  }
+
+  /**
+   * Actualiza la posición y escala de una prenda basándose en los landmarks de pose
+   */
+  updateGarmentPosition(
+    garmentId: string,
+    poseLandmarks2d: any[],
+    poseLandmarks3d?: any[]
+  ): void {
+    const entry = this.loaded.get(garmentId);
+    if (!entry) return;
+
+    if (!poseLandmarks2d || poseLandmarks2d.length < 25) return;
+
+    // Landmarks clave del cuerpo
+    const ls2d = poseLandmarks2d[11]; // Left shoulder
+    const rs2d = poseLandmarks2d[12]; // Right shoulder
+    const lh2d = poseLandmarks2d[23]; // Left hip
+    const rh2d = poseLandmarks2d[24]; // Right hip
+
+    if (!ls2d || !rs2d || !lh2d || !rh2d) return;
+
+    // Calcular centro del torso
+    const centerX = (ls2d.x + rs2d.x) / 2;
+    const centerY = (ls2d.y + rs2d.y + lh2d.y + rh2d.y) / 4;
+
+    // Calcular ancho de hombros normalizado
+    const shoulderWidthN = Math.abs(rs2d.x - ls2d.x);
+    if (shoulderWidthN < 0.02) return;
+
+    // Actualizar ancho de referencia
+    if (entry.referenceShoulderWidth === 0 || shoulderWidthN > entry.referenceShoulderWidth) {
+      entry.referenceShoulderWidth = shoulderWidthN;
     }
 
-    private updateGarmentByCategory(
-        garmentId: string,
-        entry: LoadedGarment,
-        pose2d: any[],
-        pose3d?: any[]
-    ): void {
-        const config = this.categoryConfig[entry.category];
-        if (!config) return;
+    const effectiveWidth = Math.max(shoulderWidthN, entry.referenceShoulderWidth * 0.6);
 
-        // Verificar landmarks necesarios
-        const hasLandmarks = config.anchorLandmarks.every(i => pose2d[i]);
-        if (!hasLandmarks) return;
+    // Calcular ángulo de inclinación de hombros (roll)
+    const dx = rs2d.x - ls2d.x;
+    const dy = rs2d.y - ls2d.y;
+    let shoulderAngleZ = Math.atan2(dy, dx);
+    shoulderAngleZ = this.wrapToHalfPi(shoulderAngleZ);
 
-        // Calcular posición de anclaje
-        const anchorPos = this.calculateAnchorPosition(pose2d, config.anchorLandmarks);
+    // Calcular rotación del torso (yaw) usando landmarks 3D
+    let torsoRotationY = 0;
+    if (poseLandmarks3d && poseLandmarks3d.length >= 25) {
+      const ls3d = poseLandmarks3d[11];
+      const rs3d = poseLandmarks3d[12];
+      const lh3d = poseLandmarks3d[23];
+      const rh3d = poseLandmarks3d[24];
 
-        // Calcular escala
-        const scale = this.calculateScale(entry, pose2d, config);
+      if (ls3d && rs3d && lh3d && rh3d) {
+        // Vector de hombros
+        const shoulderVec = new THREE.Vector3(
+          rs3d.x - ls3d.x,
+          rs3d.y - ls3d.y,
+          rs3d.z - ls3d.z
+        ).normalize();
 
-        // Calcular rotaciones
-        const rotations = this.calculateRotations(entry.category, pose2d, pose3d);
+        // Vector de columna vertebral
+        const spineVec = new THREE.Vector3(
+          (ls3d.x + rs3d.x) / 2 - (lh3d.x + rh3d.x) / 2,
+          (ls3d.y + rs3d.y) / 2 - (lh3d.y + rh3d.y) / 2,
+          (ls3d.z + rs3d.z) / 2 - (lh3d.z + rh3d.z) / 2
+        ).normalize();
 
-        // Aplicar transformaciones con suavizado
-        this.applyTransformations(entry, anchorPos, scale, rotations);
+        // Vector forward (perpendicular al plano del torso)
+        const forward = new THREE.Vector3()
+          .crossVectors(shoulderVec, spineVec)
+          .normalize();
+
+        torsoRotationY = Math.atan2(forward.x, forward.z);
+      }
     }
 
-    private calculateAnchorPosition(pose2d: any[], landmarkIndices: number[]): { x: number; y: number } {
-        let sumX = 0, sumY = 0;
-        for (const i of landmarkIndices) {
-            sumX += pose2d[i].x;
-            sumY += pose2d[i].y;
-        }
-        return {
-            x: sumX / landmarkIndices.length,
-            y: sumY / landmarkIndices.length
-        };
-    }
+    // Convertir coordenadas normalizadas a coordenadas de mundo
+    const cam = this.threeService.camera;
+    const dist = Math.max(cam.position.z - this.zPlane, 0.25);
+    const vFov = THREE.MathUtils.degToRad(cam.fov);
+    const planeHeight = 2 * dist * Math.tan(vFov / 2);
+    const planeWidth = planeHeight * cam.aspect;
 
-    private calculateScale(entry: LoadedGarment, pose2d: any[], config: any): number {
-        const [i1, i2] = config.scaleLandmarks;
-        const width = Math.abs(pose2d[i2].x - pose2d[i1].x);
+    const x = (centerX - 0.5) * planeWidth;
+    const y = (0.5 - centerY) * planeHeight;
 
-        if (width < 0.02) return entry.root.scale.x;
+    // Calcular escala basada en el ancho de hombros
+    const targetWidth = Math.max(effectiveWidth * planeWidth * this.garmentWidthFactor, 1e-6);
+    let s = targetWidth / entry.baseWidth;
+    s = THREE.MathUtils.clamp(s, 0.02, 20);
 
-        if (entry.referenceWidth === 0 || width > entry.referenceWidth) {
-            entry.referenceWidth = width;
-        }
+    // Aplicar transformaciones con suavizado
+    const targetPos = new THREE.Vector3(x, y, this.zPlane);
+    const targetScale = new THREE.Vector3(s, s, s);
 
-        const effectiveWidth = Math.max(width, entry.referenceWidth * 0.6);
+    entry.root.position.lerp(targetPos, this.smoothing);
+    entry.root.scale.lerp(targetScale, this.smoothing);
 
-        const cam = this.threeService.camera;
-        const dist = Math.max(cam.position.z - this.zPlane, 0.25);
-        const vFov = THREE.MathUtils.degToRad(cam.fov);
-        const planeHeight = 2 * dist * Math.tan(vFov / 2);
-        const planeWidth = planeHeight * cam.aspect;
+    // Aplicar rotaciones con suavizado
+    const currentRotY = entry.root.rotation.y;
+    const currentRotZ = entry.root.rotation.z;
 
-        const targetWidth = effectiveWidth * planeWidth * config.widthFactor;
-        let scale = targetWidth / entry.baseWidth;
-        return THREE.MathUtils.clamp(scale, 0.02, 20);
-    }
+    entry.root.rotation.set(
+      0,
+      THREE.MathUtils.lerp(currentRotY, torsoRotationY, this.smoothing),
+      THREE.MathUtils.lerp(currentRotZ, shoulderAngleZ, this.smoothing)
+    );
+  }
 
-    private calculateRotations(
-        category: GarmentCategory,
-        pose2d: any[],
-        pose3d?: any[]
-    ): { x: number; y: number; z: number } {
-        let rotX = 0, rotY = 0, rotZ = 0;
+  /**
+   * Normaliza ángulos al rango [-π/2, π/2]
+   */
+  private wrapToHalfPi(a: number): number {
+    if (a > Math.PI / 2) return a - Math.PI;
+    if (a < -Math.PI / 2) return a + Math.PI;
+    return a;
+  }
 
-        // Rotación Z (inclinación lateral)
-        if (category === GarmentCategory.UPPER_BODY || category === GarmentCategory.FULL_BODY) {
-            const ls = pose2d[11];
-            const rs = pose2d[12];
+  /**
+   * Elimina una prenda de la escena
+   */
+  removeGarment(garmentId: string): void {
+    const entry = this.loaded.get(garmentId);
+    if (!entry) return;
 
-            if (ls && rs) {
-                const dx = rs.x - ls.x;
-                const dy = rs.y - ls.y;
-                rotZ = -Math.atan2(dy, dx);
-                rotZ = this.normalizeAngle(rotZ);
-            }
-        } else if (category === GarmentCategory.LOWER_BODY) {
-            const lh = pose2d[23];
-            const rh = pose2d[24];
+    this.threeService.scene.remove(entry.root);
+    this.loaded.delete(garmentId);
+    console.log('🗑️ Prenda eliminada:', garmentId);
+  }
 
-            if (lh && rh) {
-                const dx = rh.x - lh.x;
-                const dy = rh.y - lh.y;
-                rotZ = -Math.atan2(dy, dx);
-                rotZ = this.normalizeAngle(rotZ);
-            }
-        }
+  /**
+   * Elimina todas las prendas cargadas
+   */
+  clearAllGarments(): void {
+    this.loaded.forEach((entry, garmentId) => {
+      this.threeService.scene.remove(entry.root);
+    });
+    this.loaded.clear();
+    console.log('🗑️ Todas las prendas eliminadas');
+  }
 
-        // Rotación Y (giro del cuerpo)
-        if (pose3d && pose3d.length >= 25) {
-            if (category === GarmentCategory.UPPER_BODY || category === GarmentCategory.FULL_BODY) {
-                const ls3d = pose3d[11];
-                const rs3d = pose3d[12];
-                const lh3d = pose3d[23];
-                const rh3d = pose3d[24];
+  /**
+   * Establece el outfit actual
+   */
+  setOutfit(outfit: Outfit): void {
+    this.currentOutfit = outfit;
+    console.log('👔 Outfit establecido:', outfit.name);
+  }
 
-                if (ls3d && rs3d && lh3d && rh3d) {
-                    const shoulderVec = new THREE.Vector3(
-                        rs3d.x - ls3d.x,
-                        rs3d.y - ls3d.y,
-                        rs3d.z - ls3d.z
-                    ).normalize();
+  /**
+   * Obtiene el outfit actual
+   */
+  getCurrentOutfit(): Outfit | null {
+    return this.currentOutfit;
+  }
 
-                    const spineVec = new THREE.Vector3(
-                        (ls3d.x + rs3d.x) / 2 - (lh3d.x + rh3d.x) / 2,
-                        (ls3d.y + rs3d.y) / 2 - (lh3d.y + rh3d.y) / 2,
-                        (ls3d.z + rs3d.z) / 2 - (lh3d.z + rh3d.z) / 2
-                    ).normalize();
+  /**
+   * Verifica si una prenda está cargada
+   */
+  isGarmentLoaded(garmentId: string): boolean {
+    return this.loaded.has(garmentId);
+  }
 
-                    const forward = new THREE.Vector3()
-                        .crossVectors(shoulderVec, spineVec)
-                        .normalize();
+  /**
+   * Obtiene información de una prenda cargada
+   */
+  getLoadedGarment(garmentId: string): LoadedGarment | undefined {
+    return this.loaded.get(garmentId);
+  }
 
-                    rotY = -Math.atan2(forward.x, forward.z);
-                }
-            } else if (category === GarmentCategory.LOWER_BODY) {
-                const lh3d = pose3d[23];
-                const rh3d = pose3d[24];
+  /**
+   * Obtiene la lista de IDs de prendas cargadas
+   */
+  getLoadedGarmentIds(): string[] {
+    return Array.from(this.loaded.keys());
+  }
 
-                if (lh3d && rh3d) {
-                    const hipVec = new THREE.Vector3(
-                        rh3d.x - lh3d.x,
-                        rh3d.y - lh3d.y,
-                        rh3d.z - lh3d.z
-                    ).normalize();
+  /**
+   * Actualiza el factor de suavizado para las animaciones
+   */
+  setSmoothingFactor(value: number): void {
+    this.smoothing = THREE.MathUtils.clamp(value, 0, 1);
+  }
 
-                    rotY = -Math.atan2(hipVec.x, hipVec.z);
-                }
-            }
-        }
+  /**
+   * Actualiza el factor de escala de prendas
+   */
+  setGarmentWidthFactor(value: number): void {
+    this.garmentWidthFactor = Math.max(value, 0.1);
+  }
 
-        return { x: rotX, y: rotY, z: rotZ };
-    }
-
-    private normalizeAngle(angle: number): number {
-        while (angle > Math.PI / 2) angle -= Math.PI;
-        while (angle < -Math.PI / 2) angle += Math.PI;
-        return angle;
-    }
-
-    private applyTransformations(
-        entry: LoadedGarment,
-        anchorPos: { x: number; y: number },
-        scale: number,
-        rotations: { x: number; y: number; z: number }
-    ): void {
-        const cam = this.threeService.camera;
-        const dist = Math.max(cam.position.z - this.zPlane, 0.25);
-        const vFov = THREE.MathUtils.degToRad(cam.fov);
-        const planeHeight = 2 * dist * Math.tan(vFov / 2);
-        const planeWidth = planeHeight * cam.aspect;
-
-        const x = (anchorPos.x - 0.5) * planeWidth;
-        const y = (0.5 - anchorPos.y) * planeHeight;
-
-        const targetPos = new THREE.Vector3(x, y, this.zPlane);
-        const targetScale = new THREE.Vector3(scale, scale, scale);
-
-        entry.root.position.lerp(targetPos, this.smoothing);
-        entry.root.scale.lerp(targetScale, this.smoothing);
-
-        entry.root.rotation.x = THREE.MathUtils.lerp(entry.root.rotation.x, rotations.x, this.smoothing);
-        entry.root.rotation.y = THREE.MathUtils.lerp(entry.root.rotation.y, rotations.y, this.smoothing);
-        entry.root.rotation.z = THREE.MathUtils.lerp(entry.root.rotation.z, rotations.z, this.smoothing);
-    }
-
-    showGarment(garmentId: string): void {
-        const entry = this.loaded.get(garmentId);
-        if (entry) {
-            entry.visible = true;
-            entry.root.visible = true;
-            console.log('👁️ Mostrando:', garmentId);
-        }
-    }
-
-    hideGarment(garmentId: string): void {
-        const entry = this.loaded.get(garmentId);
-        if (entry) {
-            entry.visible = false;
-            entry.root.visible = false;
-            console.log('🙈 Ocultando:', garmentId);
-        }
-    }
-
-    removeGarment(garmentId: string): void {
-        const entry = this.loaded.get(garmentId);
-        if (!entry) return;
-
-        this.threeService.scene.remove(entry.root);
-        this.loaded.delete(garmentId);
-        console.log('🗑️ Eliminada:', garmentId);
-    }
-
-    getLoadedGarments(): string[] {
-        return Array.from(this.loaded.keys());
-    }
-
-    getGarmentsByCategory(category: GarmentCategory): string[] {
-        return Array.from(this.loaded.entries())
-            .filter(([_, entry]) => entry.category === category)
-            .map(([id, _]) => id);
-    }
-
-    setOutfit(outfit: Outfit): void {
-        this.currentOutfit = outfit;
-    }
-
-    getCurrentOutfit(): Outfit | null {
-        return this.currentOutfit;
-    }
+  /**
+   * Actualiza el plano Z donde se posicionan las prendas
+   */
+  setZPlane(value: number): void {
+    this.zPlane = value;
+  }
 }
