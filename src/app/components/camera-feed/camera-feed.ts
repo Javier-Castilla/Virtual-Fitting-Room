@@ -1,4 +1,14 @@
-import { Component, OnInit, OnDestroy, ViewChild, ElementRef, Output, EventEmitter, AfterViewInit } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  OnDestroy,
+  ViewChild,
+  ElementRef,
+  Output,
+  EventEmitter,
+  AfterViewInit
+} from '@angular/core';
+
 import { MediapipeService } from '../../services/mediapipe';
 import { GestureDetectorService, type GestureResult } from '../../services/gesture-detection';
 import type { HandGestureCategory } from '../../services/gesture-detection';
@@ -16,6 +26,10 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   @Output() gestureDetected = new EventEmitter<GestureResult>();
   @Output() gestureStateChanged = new EventEmitter<string>();
 
+  poseFrames = 0;
+  lastPoseLen = 0;
+  handsCount = 0;
+
   private animationId?: number;
   private stream?: MediaStream;
 
@@ -24,84 +38,71 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
       private gestureDetector: GestureDetectorService
   ) {}
 
-  async ngOnInit() {
+  async ngOnInit(): Promise<void> {
     await this.mediapipeService.initialize();
-
-    this.gestureDetector.gestureDetected$.subscribe((result: GestureResult) => {
-      console.log('🎯 Gesto detectado:', result.type, 'Intensidad:', result.intensity);
-      this.gestureDetected.emit(result);
-    });
+    this.gestureDetector.gestureDetected$.subscribe((result: GestureResult) => this.gestureDetected.emit(result));
   }
 
-  async ngAfterViewInit() {
+  async ngAfterViewInit(): Promise<void> {
     await this.startCamera();
     this.processFrame();
   }
 
-  private async startCamera() {
-    try {
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: 1280,
-          height: 720,
-          facingMode: 'user'
-        }
-      });
+  private async startCamera(): Promise<void> {
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 1280, height: 720, facingMode: 'user' },
+      audio: false
+    });
 
-      this.videoElement.nativeElement.srcObject = this.stream;
-      await this.videoElement.nativeElement.play();
-    } catch (error) {
-      console.error('Error al acceder a la cámara:', error);
-    }
+    this.videoElement.nativeElement.srcObject = this.stream;
+    await this.videoElement.nativeElement.play();
   }
 
-  private processFrame = () => {
+  private processFrame = (): void => {
     const video = this.videoElement.nativeElement;
 
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
       const ts = performance.now();
 
-      const handResults = this.mediapipeService.handLandmarker?.detectForVideo(video, ts);
+      const pose = this.mediapipeService.detectPose(video, ts);
+      if (pose.poseLandmarks) {
+        this.poseFrames++;
+        this.lastPoseLen = pose.poseLandmarks.length;
+      }
 
+      const handResults = this.mediapipeService.handLandmarker?.detectForVideo(video, ts);
       const gestureResults = this.mediapipeService.gestureRecognizer?.recognizeForVideo(video, ts);
 
-      const landmarks = handResults?.landmarks ?? [];
-      const gestures: Array<HandGestureCategory | null> = [];
+      const handsLandmarks = handResults?.landmarks ?? [];
+      this.handsCount = handsLandmarks.length;
 
-      if (gestureResults?.gestures && gestureResults.gestures.length > 0) {
+      const gestures: Array<HandGestureCategory | null> = [];
+      if (gestureResults?.gestures?.length) {
         for (let i = 0; i < gestureResults.gestures.length; i++) {
           const top = gestureResults.gestures[i]?.[0];
-          if (top) {
-            gestures[i] = { categoryName: top.categoryName, score: top.score };
-          } else {
-            gestures[i] = null;
-          }
+          gestures[i] = top ? { categoryName: top.categoryName, score: top.score } : null;
         }
       }
 
-      if (landmarks.length > 0) {
-        this.gestureDetector.detectGesture(landmarks, gestures);
-
-        const currentState = this.gestureDetector.getCurrentState();
-        this.gestureStateChanged.emit(currentState);
-
-        this.drawLandmarks(landmarks);
+      if (handsLandmarks.length > 0) {
+        this.gestureDetector.detectGesture(handsLandmarks, gestures);
+        this.gestureStateChanged.emit(this.gestureDetector.getCurrentState());
       } else {
-        this.clearCanvas();
         this.gestureDetector.detectGesture([]);
       }
+
+      this.drawOverlay(handsLandmarks, pose.poseLandmarks);
     }
 
     this.animationId = requestAnimationFrame(this.processFrame);
   };
 
-  private drawLandmarks(landmarks: any[]) {
+  private drawOverlay(handsLandmarks: any[], poseLandmarks: any[] | null): void {
     const canvas = this.canvasElement.nativeElement;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     const video = this.videoElement.nativeElement;
-
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
@@ -111,6 +112,35 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
     ctx.scale(-1, 1);
     ctx.translate(-canvas.width, 0);
 
+    if (poseLandmarks) this.drawPose(ctx, canvas.width, canvas.height, poseLandmarks);
+    if (handsLandmarks.length > 0) this.drawHands(ctx, canvas.width, canvas.height, handsLandmarks);
+
+    ctx.restore();
+  }
+
+  private drawPose(ctx: CanvasRenderingContext2D, w: number, h: number, lm: any[]): void {
+    const links = [
+      [11, 12], [11, 23], [12, 24], [23, 24],
+      [11, 13], [13, 15],
+      [12, 14], [14, 16],
+      [23, 25], [25, 27],
+      [24, 26], [26, 28]
+    ];
+
+    ctx.strokeStyle = '#00BFFF';
+    ctx.lineWidth = 4;
+
+    for (const [a, b] of links) {
+      const pa = lm[a]; const pb = lm[b];
+      if (!pa || !pb) continue;
+      ctx.beginPath();
+      ctx.moveTo(pa.x * w, pa.y * h);
+      ctx.lineTo(pb.x * w, pb.y * h);
+      ctx.stroke();
+    }
+  }
+
+  private drawHands(ctx: CanvasRenderingContext2D, w: number, h: number, handsLandmarks: any[]): void {
     const connections = [
       [0, 1], [1, 2], [2, 3], [3, 4],
       [0, 5], [5, 6], [6, 7], [7, 8],
@@ -120,52 +150,22 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
       [5, 9], [9, 13], [13, 17]
     ];
 
-    landmarks.forEach(handLandmarks => {
-      connections.forEach(([start, end]) => {
-        const startPoint = handLandmarks[start];
-        const endPoint = handLandmarks[end];
+    for (const hand of handsLandmarks) {
+      ctx.strokeStyle = '#00FF00';
+      ctx.lineWidth = 3;
 
+      for (const [a, b] of connections) {
+        const pa = hand[a]; const pb = hand[b];
         ctx.beginPath();
-        ctx.moveTo(startPoint.x * canvas.width, startPoint.y * canvas.height);
-        ctx.lineTo(endPoint.x * canvas.width, endPoint.y * canvas.height);
-        ctx.strokeStyle = '#00FF00';
-        ctx.lineWidth = 3;
+        ctx.moveTo(pa.x * w, pa.y * h);
+        ctx.lineTo(pb.x * w, pb.y * h);
         ctx.stroke();
-      });
-
-      handLandmarks.forEach((landmark: any, index: number) => {
-        ctx.beginPath();
-        ctx.arc(
-            landmark.x * canvas.width,
-            landmark.y * canvas.height,
-            index === 0 ? 8 : 5,
-            0,
-            2 * Math.PI
-        );
-        ctx.fillStyle = index === 0 ? '#FF0000' : '#00FF00';
-        ctx.fill();
-        ctx.strokeStyle = '#FFFFFF';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      });
-    });
-
-    ctx.restore();
+      }
+    }
   }
 
-  private clearCanvas() {
-    const canvas = this.canvasElement.nativeElement;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-  }
-
-  ngOnDestroy() {
-    if (this.animationId) {
-      cancelAnimationFrame(this.animationId);
-    }
-    if (this.stream) {
-      this.stream.getTracks().forEach(track => track.stop());
-    }
+  ngOnDestroy(): void {
+    if (this.animationId) cancelAnimationFrame(this.animationId);
+    this.stream?.getTracks().forEach((t) => t.stop());
   }
 }

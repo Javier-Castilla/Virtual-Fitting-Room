@@ -1,4 +1,8 @@
 <div class="video-container">
-    <video #videoElement autoplay playsinline></video>
+    <video #videoElement autoplay playsinline muted></video>
     <canvas #canvasElement class="overlay-canvas"></canvas>
+
+    <div class="debug">
+        Pose: {{ poseFrames }} | LastPoseLen: {{ lastPoseLen }} | Hands: {{ handsCount }}
+    </div>
 </div>

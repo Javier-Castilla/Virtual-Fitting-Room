@@ -1,119 +1,105 @@
 import { Injectable } from '@angular/core';
+import * as THREE from 'three';
 import { ModelLoaderService } from './model-loader';
 import { ThreejsService } from './threejs';
 import { Outfit } from '../../domain/model/outfit';
 import { Garment } from '../../domain/model/garment';
-import * as THREE from 'three';
 
-@Injectable({
-    providedIn: 'root'
-})
+type LoadedGarment = {
+    root: THREE.Object3D;
+    baseWidth: number;
+};
+
+@Injectable({ providedIn: 'root' })
 export class GarmentManagerService {
     private currentOutfit: Outfit | null = null;
-    private loadedModels: Map<string, THREE.Object3D> = new Map();
+    private loaded: Map<string, LoadedGarment> = new Map();
+
+    private smoothing = 0.35;
+    private mirrorX = true;
+    private zPlane = 0;
 
     constructor(
         private modelLoader: ModelLoaderService,
         private threeService: ThreejsService
-    ) {
-        console.log('🔵 GarmentManager: Servicio inicializado');
-    }
+    ) {}
 
     async loadGarmentModel(garment: Garment): Promise<void> {
-        console.log('🔵 GarmentManager: Intentando cargar', garment.name, 'desde', garment.modelPath);
+        const inner = await this.modelLoader.loadModel(garment.modelPath);
+        inner.name = garment.id;
 
-        try {
-            console.log('🔵 GarmentManager: Llamando a modelLoader...');
-            const model = await this.modelLoader.loadModel(garment.modelPath);
-            console.log('🟢 GarmentManager: Modelo recibido', model);
+        inner.updateMatrixWorld(true);
 
-            model.name = garment.id;
+        const bbox = new THREE.Box3().setFromObject(inner);
+        const center = bbox.getCenter(new THREE.Vector3());
+        const size = bbox.getSize(new THREE.Vector3());
 
-            let meshCount = 0;
-            model.traverse((child) => {
-                if ((child as THREE.Mesh).isMesh) {
-                    const mesh = child as THREE.Mesh;
-                    mesh.castShadow = true;
-                    mesh.receiveShadow = true;
-                    meshCount++;
-                    console.log('🟢 GarmentManager: Mesh encontrado', meshCount, mesh);
-                }
-            });
+        inner.position.sub(center);
 
-            console.log('🟢 GarmentManager: Total meshes:', meshCount);
+        const root = new THREE.Group();
+        root.name = `${garment.id}__root`;
+        root.add(inner);
 
-            this.loadedModels.set(garment.id, model);
-            this.threeService.scene.add(model);
+        const baseWidth = Math.max(size.x, 1e-6);
 
-            console.log('🟢 GarmentManager: Modelo añadido a la escena');
-            console.log('🟢 GarmentManager: Posición inicial:', model.position);
-            console.log('🟢 GarmentManager: Escala inicial:', model.scale);
-            console.log('🟢 GarmentManager: Rotación inicial:', model.rotation);
+        this.loaded.set(garment.id, { root, baseWidth });
+        this.threeService.scene.add(root);
+    }
 
-        } catch (error) {
-            console.error('🔴 GarmentManager: Error cargando', error);
-            throw error;
-        }
+    updateGarmentFromPose2D(garmentId: string, pose: any[]): void {
+        const entry = this.loaded.get(garmentId);
+        if (!entry) return;
+        if (!pose || pose.length < 25) return;
+
+        const ls = pose[11];
+        const rs = pose[12];
+        const lh = pose[23];
+        const rh = pose[24];
+        if (!ls || !rs || !lh || !rh) return;
+
+        const centerX0 = (ls.x + rs.x) / 2;
+        const centerY0 = (ls.y + rs.y + lh.y + rh.y) / 4;
+
+        const shoulderWidthN = Math.abs(rs.x - ls.x);
+        const shoulderAngle0 = Math.atan2(rs.y - ls.y, rs.x - ls.x);
+
+        const centerX = this.mirrorX ? 1 - centerX0 : centerX0;
+        const shoulderAngle = this.mirrorX ? -shoulderAngle0 : shoulderAngle0;
+
+        const cam = this.threeService.camera;
+        const dist = Math.max(cam.position.z - this.zPlane, 0.25);
+
+        const vFov = THREE.MathUtils.degToRad(cam.fov);
+        const planeHeight = 2 * dist * Math.tan(vFov / 2);
+        const planeWidth = planeHeight * cam.aspect;
+
+        const x = (centerX - 0.5) * planeWidth;
+        const y = (0.5 - centerY0) * planeHeight;
+
+        const targetWidth = Math.max(shoulderWidthN * planeWidth, 1e-6);
+        let s = targetWidth / entry.baseWidth;
+        s = THREE.MathUtils.clamp(s, 0.02, 20);
+
+        const targetPos = new THREE.Vector3(x, y, this.zPlane);
+        const targetScale = new THREE.Vector3(s, s, s);
+
+        entry.root.position.lerp(targetPos, this.smoothing);
+        entry.root.scale.lerp(targetScale, this.smoothing);
+        entry.root.rotation.set(0, 0, THREE.MathUtils.lerp(entry.root.rotation.z, shoulderAngle, this.smoothing));
     }
 
     updateGarmentPosition(garmentId: string, poseLandmarks: any[]): void {
-        const model = this.loadedModels.get(garmentId);
-        if (!model) {
-            console.log('⚠️ GarmentManager: Modelo no encontrado para', garmentId);
-            return;
-        }
-
-        if (!poseLandmarks || poseLandmarks.length === 0) {
-            console.log('⚠️ GarmentManager: No hay pose landmarks');
-            return;
-        }
-
-        const leftShoulder = poseLandmarks[11];
-        const rightShoulder = poseLandmarks[12];
-        const leftHip = poseLandmarks[23];
-        const rightHip = poseLandmarks[24];
-
-        // Centro del torso
-        const centerX = (leftShoulder.x + rightShoulder.x) / 2;
-        const centerY = (leftShoulder.y + rightShoulder.y + leftHip.y + rightHip.y) / 4;
-        const centerZ = (leftShoulder.z + rightShoulder.z) / 2;
-
-        // Posición más cercana a la cámara
-        model.position.set(
-            (centerX - 0.5) * 5,    // ← Reducido de 10 a 5
-            (0.5 - centerY) * 5,    // ← Reducido de 10 a 5
-            centerZ * 5 - 2         // ← Más cerca de la cámara
-        );
-
-        // Escala más grande basada en ancho de hombros
-        const shoulderWidth = Math.abs(rightShoulder.x - leftShoulder.x);
-        const scale = shoulderWidth * 50; // ← Aumentado de 15 a 50
-        model.scale.set(scale, scale, scale);
-
-        // Rotación según inclinación de hombros
-        const shoulderAngle = Math.atan2(
-            rightShoulder.y - leftShoulder.y,
-            rightShoulder.x - leftShoulder.x
-        );
-        model.rotation.z = shoulderAngle;
-
-        console.log('📍 Posición:', model.position);
-        console.log('📏 Escala:', model.scale);
+        this.updateGarmentFromPose2D(garmentId, poseLandmarks);
     }
 
-
     removeGarment(garmentId: string): void {
-        console.log('🔵 GarmentManager: Removiendo', garmentId);
-        const model = this.loadedModels.get(garmentId);
-        if (model) {
-            this.threeService.scene.remove(model);
-            this.loadedModels.delete(garmentId);
-            console.log('🟢 GarmentManager: Modelo removido');
-        }
+        const entry = this.loaded.get(garmentId);
+        if (!entry) return;
+        this.threeService.scene.remove(entry.root);
+        this.loaded.delete(garmentId);
     }
 
     setOutfit(outfit: Outfit): void {
-        console.log('🔵 GarmentManager: Outfit configurado', outfit.name);
         this.currentOutfit = outfit;
     }
 
