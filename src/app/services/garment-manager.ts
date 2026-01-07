@@ -9,6 +9,7 @@ type LoadedGarment = {
     root: THREE.Group;
     inner: THREE.Object3D;
     baseWidth: number;
+    referenceShoulderWidth: number;
 };
 
 @Injectable({ providedIn: 'root' })
@@ -41,7 +42,6 @@ export class GarmentManagerService {
         inner.position.sub(center);
 
         inner.rotation.set(0, 0, 0);
-        inner.rotateY(Math.PI);
 
         const root = new THREE.Group();
         root.name = `${garment.id}__root`;
@@ -49,7 +49,7 @@ export class GarmentManagerService {
 
         const baseWidth = Math.max(size.x, 1e-6);
 
-        this.loaded.set(garment.id, { root, inner, baseWidth });
+        this.loaded.set(garment.id, { root, inner, baseWidth, referenceShoulderWidth: 0 });
         this.threeService.scene.add(root);
     }
 
@@ -70,12 +70,17 @@ export class GarmentManagerService {
         const shoulderWidthN = Math.abs(rs.x - ls.x);
         if (shoulderWidthN < 0.02) return;
 
+        if (entry.referenceShoulderWidth === 0 || shoulderWidthN > entry.referenceShoulderWidth) {
+            entry.referenceShoulderWidth = shoulderWidthN;
+        }
+
+        const effectiveWidth = Math.max(shoulderWidthN, entry.referenceShoulderWidth * 0.6);
+
         const dx = rs.x - ls.x;
         const dy = rs.y - ls.y;
 
         let shoulderAngle = Math.atan2(dy, dx);
         shoulderAngle = this.wrapToHalfPi(shoulderAngle);
-        shoulderAngle = -shoulderAngle;
 
         const cam = this.threeService.camera;
         const dist = Math.max(cam.position.z - this.zPlane, 0.25);
@@ -87,7 +92,7 @@ export class GarmentManagerService {
         const x = (centerX - 0.5) * planeWidth;
         const y = (0.5 - centerY) * planeHeight;
 
-        const targetWidth = Math.max(shoulderWidthN * planeWidth * this.garmentWidthFactor, 1e-6);
+        const targetWidth = Math.max(effectiveWidth * planeWidth * this.garmentWidthFactor, 1e-6);
         let s = targetWidth / entry.baseWidth;
         s = THREE.MathUtils.clamp(s, 0.02, 20);
 
