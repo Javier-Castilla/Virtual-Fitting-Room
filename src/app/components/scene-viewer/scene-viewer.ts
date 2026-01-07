@@ -1,16 +1,14 @@
-import { Component, AfterViewInit, OnDestroy, ElementRef, ViewChild, ChangeDetectorRef } from '@angular/core';
+import { Component, AfterViewInit, OnDestroy, ElementRef, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Subscription } from 'rxjs';
-import * as THREE from 'three';
-
 import { ThreejsService } from '../../services/threejs';
 import { GarmentManagerService } from '../../services/garment-manager';
 import { MediapipeService } from '../../services/mediapipe';
-
 import { Garment } from '../../../domain/model/garment';
 import { GarmentType } from '../../../domain/enums/garment-type.enum';
 import { GarmentCategory } from '../../../domain/enums/garment-category.enum';
 import { GarmentSize } from '../../../domain/enums/garment-size.enum';
+import * as THREE from 'three';
 
 @Component({
   selector: 'app-scene-viewer',
@@ -24,6 +22,7 @@ export class SceneViewerComponent implements AfterViewInit, OnDestroy {
   rendererCanvas!: ElementRef<HTMLDivElement>;
 
   modelStatus: 'INIT' | 'LOADING' | 'LOADED' | 'ERROR' = 'INIT';
+
   poseFrames = 0;
   renderFrames = 0;
 
@@ -32,45 +31,31 @@ export class SceneViewerComponent implements AfterViewInit, OnDestroy {
   private resizeHandler = () => this.onResize();
   private trackedGarmentId = 'torso-1';
 
+  private latestWorld: any[] | null = null;
+
   constructor(
       private threeService: ThreejsService,
       private garmentManager: GarmentManagerService,
-      private mediapipe: MediapipeService,
-      private cdr: ChangeDetectorRef
+      private mediapipe: MediapipeService
   ) {}
 
-  ngAfterViewInit(): void {
+  async ngAfterViewInit(): Promise<void> {
     this.threeService.initScene(this.rendererCanvas.nativeElement);
+    this.threeService.camera.position.z = 5;
 
-    this.threeService.camera.position.set(0, 0, 5);
-    this.threeService.camera.lookAt(0, 0, 0);
-
-    const ambient = new THREE.AmbientLight(0xffffff, 0.8);
-    this.threeService.scene.add(ambient);
-
-    const cube = new THREE.Mesh(
-        new THREE.BoxGeometry(0.4, 0.4, 0.4),
-        new THREE.MeshStandardMaterial({ color: 0xff0000 })
+    const testCube = new THREE.Mesh(
+        new THREE.BoxGeometry(0.5, 0.5, 0.5),
+        new THREE.MeshBasicMaterial({ color: 0xff0000 })
     );
-    cube.position.set(0, 0, 0);
-    this.threeService.scene.add(cube);
+    testCube.position.set(0, 0, 0);
+    this.threeService.scene.add(testCube);
+
+    const light = new THREE.AmbientLight(0xffffff, 1);
+    this.threeService.scene.add(light);
 
     this.onResize();
     window.addEventListener('resize', this.resizeHandler);
 
-    this.poseSub = this.mediapipe.poseLandmarks$.subscribe((pose2d: any[]) => {
-      this.poseFrames++;
-      this.garmentManager.updateGarmentPosition(this.trackedGarmentId, pose2d);
-    });
-
-    requestAnimationFrame(this.animate);
-
-    setTimeout(() => {
-      this.loadGarment();
-    }, 0);
-  }
-
-  private async loadGarment(): Promise<void> {
     const garment: Garment = {
       id: this.trackedGarmentId,
       name: 'Jacket',
@@ -81,18 +66,25 @@ export class SceneViewerComponent implements AfterViewInit, OnDestroy {
       size: GarmentSize.M
     };
 
-    this.modelStatus = 'LOADING';
-    this.cdr.detectChanges();
-
     try {
+      this.modelStatus = 'LOADING';
       await this.garmentManager.loadGarmentModel(garment);
       this.modelStatus = 'LOADED';
-      this.cdr.detectChanges();
     } catch (e) {
       this.modelStatus = 'ERROR';
-      this.cdr.detectChanges();
       console.error('Error cargando prenda:', e);
     }
+
+    this.mediapipe.poseWorldLandmarks$.subscribe((world) => {
+      this.latestWorld = world;
+    });
+
+    this.poseSub = this.mediapipe.poseLandmarks$.subscribe((pose2d) => {
+      this.poseFrames++;
+      this.garmentManager.updateGarmentPosition(this.trackedGarmentId, pose2d, this.latestWorld || undefined);
+    });
+
+    this.animate();
   }
 
   private animate = (): void => {
