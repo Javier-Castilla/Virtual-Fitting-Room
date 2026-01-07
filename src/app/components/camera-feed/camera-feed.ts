@@ -7,7 +7,7 @@ import {
   AfterViewInit
 } from '@angular/core';
 import { MediapipeService } from '../../services/mediapipe';
-import { GestureDetectorService } from '../../services/gesture-detection/gesture-detector.service';
+import { GestureDetectorService, GestureType, type GestureResult } from '../../services/gesture-detection/gesture-detector.service';
 
 @Component({
   selector: 'app-camera-feed',
@@ -24,6 +24,12 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   lastPoseLen = 0;
   handsCount = 0;
 
+  // ✅ Información de gestos
+  currentGestureState: string = 'IDLE';
+  lastGesture: string = 'NONE';
+  lastIntensity: number = 0;
+  counter: number = 0;
+
   private animationId?: number;
   private stream?: MediaStream;
 
@@ -35,6 +41,15 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   async ngOnInit(): Promise<void> {
     console.log('🎥 Camera Feed: Inicializando MediaPipe...');
     await this.mediapipeService.initialize();
+
+    // ✅ Suscribirse a gestos detectados
+    this.gestureDetector.gestureDetected$.subscribe((result: GestureResult) => {
+      this.lastGesture = result.type;
+      this.lastIntensity = result.intensity || 0;
+      this.counter++;
+      console.log('🎯 Gesto detectado en Camera Feed:', result.type);
+    });
+
     console.log('✅ MediaPipe inicializado');
   }
 
@@ -87,8 +102,10 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
 
       if (handsLandmarks.length > 0) {
         this.gestureDetector.detectGesture(handsLandmarks, gestures);
+        this.currentGestureState = this.gestureDetector.getCurrentState();
       } else {
         this.gestureDetector.detectGesture([]);
+        this.currentGestureState = 'NO_HANDS';
       }
 
       this.drawOverlay(handsLandmarks, pose.poseLandmarks);

@@ -79,8 +79,9 @@ import { GarmentCategory } from '../domain/enums/garment-category.enum';
       align-items: center;
       gap: 10px;
       box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-      animation: fadeInOut 1s ease-in-out;
+      animation: fadeInOut 0.6s ease-in-out forwards;
       min-width: 250px;
+      opacity: 0;
     }
 
     @keyframes fadeInOut {
@@ -88,11 +89,11 @@ import { GarmentCategory } from '../domain/enums/garment-category.enum';
         opacity: 0;
         transform: translate(-50%, -50%) scale(0.8);
       }
-      20% {
+      15% {
         opacity: 1;
         transform: translate(-50%, -50%) scale(1.05);
       }
-      80% {
+      85% {
         opacity: 1;
         transform: translate(-50%, -50%) scale(1);
       }
@@ -222,19 +223,28 @@ export class App implements OnInit, OnDestroy {
   }
 
   private showGestureAnimation(icon: string, text: string, type: string): void {
-    this.gestureIcon = icon;
-    this.gestureText = text;
-    this.lastGestureType = type;
-    this.showGestureFeedback = true;
-
+    // Limpiar el timeout anterior si existe
     if (this.feedbackTimeout) {
       clearTimeout(this.feedbackTimeout);
     }
 
-    this.feedbackTimeout = setTimeout(() => {
-      this.showGestureFeedback = false;
-    }, 1000);
+    // Ocultar primero para forzar re-render
+    this.showGestureFeedback = false;
+
+    // Mostrar en el próximo ciclo
+    setTimeout(() => {
+      this.gestureIcon = icon;
+      this.gestureText = text;
+      this.lastGestureType = type;
+      this.showGestureFeedback = true;
+
+      // Ocultar después de 600ms (duración de la animación)
+      this.feedbackTimeout = setTimeout(() => {
+        this.showGestureFeedback = false;
+      }, 600);
+    }, 0);
   }
+
 
   onMenuClick(): void {
     console.log('🔵 Menu hamburguesa clickeado');
