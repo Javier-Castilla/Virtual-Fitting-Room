@@ -1,8 +1,8 @@
-import { Component, Output, EventEmitter, Input, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
+import { Component, Output, EventEmitter, Input, ViewChild, ElementRef, AfterViewInit, OnDestroy, OnChanges, SimpleChanges, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Garment } from '../../../domain/model/garment';
-import { GARMENTS_CATALOG } from '../../data/garments-catalog';
-import { GarmentType } from '../../../domain/enums/garment-type.enum';
+import { GarmentCategory } from '../../../domain/enums/garment-category.enum';
+import { GarmentCatalogService} from "../../services/garments-catalog.service";
 
 @Component({
   selector: 'app-gallery-bar',
@@ -11,43 +11,52 @@ import { GarmentType } from '../../../domain/enums/garment-type.enum';
   templateUrl: './gallery-bar.html',
   styleUrls: ['./gallery-bar.css']
 })
-export class GalleryBarComponent implements AfterViewInit, OnDestroy {
-  @Input() selectedCategory: string = 'camisas';
+export class GalleryBarComponent implements OnInit, AfterViewInit, OnDestroy, OnChanges {
+  @Input() selectedCategory: GarmentCategory = GarmentCategory.UPPER_BODY;
   @Output() itemSelected = new EventEmitter<Garment>();
+
   @ViewChild('galleryScroll') galleryScroll!: ElementRef;
 
   selectedItemId: string | null = null;
   centerItemIndex: number = 0;
+  isLoading = true;
 
   private isDragging = false;
   private startX = 0;
   private scrollLeft = 0;
   private scrollTimeout: any;
 
-  items: Garment[] = GARMENTS_CATALOG;
+  constructor(private garmentCatalogService: GarmentCatalogService) {}
 
-  get filteredItems(): Garment[] {
-    if (this.selectedCategory === 'all') {
-      return this.items;
-    }
-    return this.items.filter(item => this.matchesCategory(item));
+  async ngOnInit(): Promise<void> {
+    await this.garmentCatalogService.initialize();
+    this.isLoading = false;
+    console.log('✅ Gallery: Catálogo cargado');
   }
 
-  private matchesCategory(item: Garment): boolean {
-    const categoryMap: { [key: string]: GarmentType } = {
-      'camisas': GarmentType.SHIRT,
-      'chaquetas': GarmentType.JACKET,
-      'pantalones': GarmentType.PANTS,
-      'vestidos': GarmentType.DRESS
-    };
-    return item.type === categoryMap[this.selectedCategory];
+  get filteredItems(): Garment[] {
+    return this.garmentCatalogService.getGarmentsByCategory(this.selectedCategory);
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['selectedCategory'] && !changes['selectedCategory'].firstChange) {
+      console.log('📂 Gallery: Categoría cambiada a:', this.selectedCategory);
+      this.centerItemIndex = 0;
+      setTimeout(() => {
+        this.scrollToCenter(0);
+        const firstItem = this.filteredItems[0];
+        if (firstItem) {
+          this.selectedItemId = firstItem.id;
+          this.itemSelected.emit(firstItem);
+        }
+      }, 100);
+    }
   }
 
   ngAfterViewInit(): void {
     setTimeout(() => {
       this.centerItemIndex = 0;
       this.scrollToCenter(0);
-      // Emitir el primer item seleccionado
       const firstItem = this.filteredItems[0];
       if (firstItem) {
         this.selectedItemId = firstItem.id;
@@ -136,11 +145,13 @@ export class GalleryBarComponent implements AfterViewInit, OnDestroy {
 
   onItemClick(item: Garment, event?: MouseEvent): void {
     if (this.isDragging) return;
+
     this.selectedItemId = item.id;
     const index = this.filteredItems.indexOf(item);
     if (index !== -1) {
       this.scrollToCenter(index);
     }
+
     this.itemSelected.emit(item);
   }
 
@@ -163,7 +174,6 @@ export class GalleryBarComponent implements AfterViewInit, OnDestroy {
     }, 50);
   }
 
-  // ✅ MÉTODOS PÚBLICOS PARA NAVEGACIÓN CON GESTOS
   public navigateNext(): void {
     const maxIndex = this.filteredItems.length - 1;
     if (this.centerItemIndex < maxIndex) {
@@ -171,7 +181,6 @@ export class GalleryBarComponent implements AfterViewInit, OnDestroy {
       this.scrollToCenter(this.centerItemIndex);
       console.log('➡️ Gallery: Navegando al siguiente item:', this.centerItemIndex);
 
-      // Emitir inmediatamente el item seleccionado
       setTimeout(() => {
         const nextItem = this.filteredItems[this.centerItemIndex];
         if (nextItem) {
@@ -190,7 +199,6 @@ export class GalleryBarComponent implements AfterViewInit, OnDestroy {
       this.scrollToCenter(this.centerItemIndex);
       console.log('⬅️ Gallery: Navegando al item anterior:', this.centerItemIndex);
 
-      // Emitir inmediatamente el item seleccionado
       setTimeout(() => {
         const prevItem = this.filteredItems[this.centerItemIndex];
         if (prevItem) {

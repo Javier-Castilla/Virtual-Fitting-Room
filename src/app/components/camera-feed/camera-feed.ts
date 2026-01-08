@@ -6,7 +6,8 @@ import {
   ElementRef,
   AfterViewInit,
   Output,
-  EventEmitter
+  EventEmitter,
+  HostListener
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MediapipeService } from '../../services/mediapipe';
@@ -23,39 +24,45 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('videoElement') videoElement!: ElementRef<HTMLVideoElement>;
   @ViewChild('canvasElement') canvasElement!: ElementRef<HTMLCanvasElement>;
 
-  // ✅ AGREGAR: Output para emitir gestos hacia app.ts
   @Output() gestureDetected = new EventEmitter<GestureResult>();
   @Output() gestureStateChanged = new EventEmitter<string>();
 
-  // Propiedades públicas para el template
   poseFrames = 0;
   lastPoseLen = 0;
   handsCount = 0;
 
-  // Información de gestos
   currentGestureState: string = 'IDLE';
   lastGesture: string = 'NONE';
   lastIntensity: number = 0;
   counter: number = 0;
 
-  // Información de POINTING en tiempo real
   public currentHandPosition: { x: number; y: number } | null = null;
   public isPointingGesture: boolean = false;
+  public isPeaceGesture: boolean = false;
   public pointingCounter: number = 0;
+
+  showLandmarks: boolean = true;
+  showDebugPanel: boolean = true;
 
   private animationId?: number;
   private stream?: MediaStream;
 
   constructor(
-    private mediapipeService: MediapipeService,
-    private gestureDetector: GestureDetectorService
+      private mediapipeService: MediapipeService,
+      private gestureDetector: GestureDetectorService
   ) {}
+
+  @HostListener('window:keydown', ['$event'])
+  handleKeyDown(event: KeyboardEvent): void {
+    if (event.key === 'l' || event.key === 'L') {
+      this.toggleDebugMode();
+    }
+  }
 
   async ngOnInit(): Promise<void> {
     console.log('🎥 Camera Feed: Inicializando MediaPipe...');
     await this.mediapipeService.initialize();
 
-    // ✅ CORREGIDO: Suscribirse Y emitir hacia arriba
     this.gestureDetector.gestureDetected$.subscribe((result: GestureResult) => {
       this.lastGesture = result.type;
       this.lastIntensity = result.intensity || 0;
@@ -63,12 +70,8 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
 
       if (result.type === GestureType.POINTING) {
         this.pointingCounter++;
-        console.log('☝️ POINTING EVENT! Contador:', this.pointingCounter);
       }
 
-      console.log('🎯 Gesto detectado:', result.type);
-
-      // ✅ EMITIR HACIA APP.TS
       this.gestureDetected.emit(result);
     });
 
@@ -99,8 +102,8 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
 
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
       const ts = performance.now();
-
       const pose = this.mediapipeService.detectPose(video, ts);
+
       if (pose.poseLandmarks) {
         this.poseFrames++;
         this.lastPoseLen = pose.poseLandmarks.length;
@@ -108,7 +111,6 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
 
       const handResults = this.mediapipeService.handLandmarker?.detectForVideo(video, ts);
       const gestureResults = this.mediapipeService.gestureRecognizer?.recognizeForVideo(video, ts);
-
       const handsLandmarks = handResults?.landmarks ?? [];
       this.handsCount = handsLandmarks.length;
 
@@ -121,26 +123,20 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
       }
 
       if (handsLandmarks.length > 0) {
-        // Procesar gestos
         this.gestureDetector.detectGesture(handsLandmarks, gestures);
-
-        // Actualizar posición de la mano (dedo índice - landmark 8)
         const indexFinger = handsLandmarks[0][8];
         this.currentHandPosition = { x: indexFinger.x, y: indexFinger.y };
 
-        // Detectar POINTING en tiempo real (sin cooldown)
         this.isPointingGesture = this.gestureDetector.isPointingNow();
-        this.currentGestureState = this.isPointingGesture ? 'POINTING' : 'IDLE';
+        this.isPeaceGesture = this.gestureDetector.isPeaceNow();
 
-        // ✅ EMITIR CAMBIO DE ESTADO
+        this.currentGestureState = this.isPointingGesture ? 'POINTING' :
+            this.isPeaceGesture ? 'PEACE' : 'IDLE';
         this.gestureStateChanged.emit(this.currentGestureState);
-
-        if (this.isPointingGesture && this.currentHandPosition) {
-          console.log(`🔍 POINTING: x=${this.currentHandPosition.x.toFixed(3)}, y=${this.currentHandPosition.y.toFixed(3)}`);
-        }
       } else {
         this.currentHandPosition = null;
         this.isPointingGesture = false;
+        this.isPeaceGesture = false;
         this.gestureDetector.detectGesture([]);
         this.currentGestureState = 'NO_HANDS';
         this.gestureStateChanged.emit(this.currentGestureState);
@@ -162,12 +158,13 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
     canvas.height = video.videoHeight;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.save();
 
-    if (poseLandmarks) this.drawPose(ctx, canvas.width, canvas.height, poseLandmarks);
-    if (handsLandmarks.length > 0) this.drawHands(ctx, canvas.width, canvas.height, handsLandmarks);
-
-    ctx.restore();
+    if (this.showLandmarks) {
+      ctx.save();
+      if (poseLandmarks) this.drawPose(ctx, canvas.width, canvas.height, poseLandmarks);
+      if (handsLandmarks.length > 0) this.drawHands(ctx, canvas.width, canvas.height, handsLandmarks);
+      ctx.restore();
+    }
   }
 
   private drawPose(ctx: CanvasRenderingContext2D, w: number, h: number, lm: any[]): void {
@@ -225,6 +222,12 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
         ctx.fill();
       }
     }
+  }
+
+  toggleDebugMode(): void {
+    this.showLandmarks = !this.showLandmarks;
+    this.showDebugPanel = !this.showDebugPanel;
+    console.log(`🔍 Debug Mode: ${this.showLandmarks ? 'ON ✅' : 'OFF ❌'}`);
   }
 
   ngOnDestroy(): void {

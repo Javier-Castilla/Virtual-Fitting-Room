@@ -2,6 +2,9 @@
   "name": "trabajo-final-vc",
   "version": "0.0.0",
   "scripts": {
+    "generate:models": "node generate-models-list.mjs",
+    "prestart": "npm run generate:models",
+    "prebuild": "npm run generate:models",
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",

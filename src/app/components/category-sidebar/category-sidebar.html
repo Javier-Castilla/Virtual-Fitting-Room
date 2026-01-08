@@ -1,19 +1,22 @@
 <div class="category-sidebar">
-  <h2 class="sidebar-title">Categorías</h2>
-  <ul class="category-list">
-    <li
-      *ngFor="let category of categories"
-      class="category-item"
-      [class.selected]="isSelected(category.id)"
-      [class.pointing]="isPointing(category.id)"
-      (click)="onCategoryClick(category)">
+    <h2 class="sidebar-title">Categorías</h2>
+    <ul class="category-list">
+        @for (category of categories; track category) {
+            <li
+                    class="category-item"
+                    [attr.data-category]="category"
+                    [class.selected]="isSelected(category)"
+                    [class.pointing]="isPointing(category)"
+                    (click)="onCategoryClick(category)">
 
-      <span class="category-label">{{ category.label }}</span>
+                <span class="category-label">{{ category }}</span>
 
-      <!-- Indicador de progreso de pointing -->
-      <div class="pointing-progress" *ngIf="isPointing(category.id)">
-        <div class="progress-bar" [style.width.%]="pointingProgress"></div>
-      </div>
-    </li>
-  </ul>
+                @if (isPointing(category)) {
+                    <div class="pointing-progress">
+                        <div class="progress-bar" [style.width.%]="pointingProgress"></div>
+                    </div>
+                }
+            </li>
+        }
+    </ul>
 </div>

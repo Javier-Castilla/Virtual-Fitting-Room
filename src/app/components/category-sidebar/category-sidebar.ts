@@ -1,10 +1,6 @@
-import { Component, Output, EventEmitter, Input } from '@angular/core';
-import { CommonModule } from '@angular/common';
-
-export interface Category {
-  id: string;
-  label: string;
-}
+import {Component, EventEmitter, Input, Output} from '@angular/core';
+import {CommonModule} from '@angular/common';
+import {GarmentCategory} from "../../../domain/enums/garment-category.enum";
 
 @Component({
   selector: 'app-category-sidebar',
@@ -14,28 +10,23 @@ export interface Category {
   styleUrls: ['./category-sidebar.css']
 })
 export class CategorySidebarComponent {
-  @Output() categorySelected = new EventEmitter<string>();
-  @Input() selectedCategoryId: string = 'camisas';
-  @Input() pointingCategoryId: string | null = null;
-  @Input() pointingProgress: number = 0; // 0-100
+  @Output() categorySelected = new EventEmitter<GarmentCategory>();
+  @Input() selectedCategory: GarmentCategory = GarmentCategory.UPPER_BODY;
+  @Input() pointingCategory: GarmentCategory | null = null;
+  @Input() pointingProgress: number = 0;
 
-  categories: Category[] = [
-    { id: 'chaquetas', label: 'Chaquetas' },
-    { id: 'camisas', label: 'Camisas' },
-    { id: 'pantalones', label: 'Pantalones y faldas' },
-    { id: 'vestidos', label: 'Vestidos' }
-  ];
+  protected readonly categories = Object.values(GarmentCategory);
 
-  onCategoryClick(category: Category): void {
-    this.selectedCategoryId = category.id;
-    this.categorySelected.emit(category.id);
+  onCategoryClick(category: GarmentCategory): void {
+    this.selectedCategory = category;
+    this.categorySelected.emit(category);
   }
 
-  isPointing(categoryId: string): boolean {
-    return this.pointingCategoryId === categoryId;
+  isPointing(category: GarmentCategory): boolean {
+    return this.pointingCategory === category;
   }
 
-  isSelected(categoryId: string): boolean {
-    return this.selectedCategoryId === categoryId;
+  isSelected(category: GarmentCategory): boolean {
+    return this.selectedCategory === category;
   }
 }

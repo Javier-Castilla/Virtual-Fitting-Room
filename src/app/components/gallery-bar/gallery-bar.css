@@ -7,21 +7,28 @@
   z-index: 100;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-
-  /* Gradiente de máscara corregido */
   mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    black 60%
+          to bottom,
+          transparent 0%,
+          black 60%
   );
   -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    black 60%
+          to bottom,
+          transparent 0%,
+          black 60%
   );
-
   background: rgba(217, 217, 217, 0.3);
   box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.loading-state {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+  color: white;
+  font-size: 1.2rem;
+  font-weight: 600;
 }
 
 .gallery-scroll {

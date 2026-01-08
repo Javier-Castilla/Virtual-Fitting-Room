@@ -1,140 +1,54 @@
 <div class="video-container">
-  <video #videoElement autoplay playsinline muted></video>
-  <canvas #canvasElement class="overlay-canvas"></canvas>
+    <video #videoElement autoplay playsinline></video>
+    <canvas #canvasElement class="overlay-canvas"></canvas>
 
-  <!-- ✅ PANEL DE DEBUG CON INFORMACIÓN DE POINTING -->
-  <div class="debug-panel">
-    <div class="debug-title">🎥 MediaPipe & Gestures</div>
+    @if (showDebugPanel) {
+        <div class="landmarks-indicator" [class.hidden]="!showLandmarks">
+            👁️ Debug Mode
+        </div>
 
-    <div class="debug-section">
-      <div class="debug-section-title">Pose Detection</div>
-      <div class="debug-row">
-        <span class="debug-label">Frames:</span>
-        <span class="debug-value">{{ poseFrames }}</span>
-      </div>
-      <div class="debug-row">
-        <span class="debug-label">Landmarks:</span>
-        <span class="debug-value">{{ lastPoseLen }}</span>
-      </div>
-      <div class="debug-row">
-        <span class="debug-label">Hands:</span>
-        <span class="debug-value" [class.active]="handsCount > 0">{{ handsCount }}</span>
-      </div>
-    </div>
+        <div class="debug-panel">
+            <div class="debug-title">🎯 Detection Stats</div>
 
-    <div class="debug-section">
-      <div class="debug-section-title">Gesture Recognition</div>
-      <div class="debug-row">
-        <span class="debug-label">Estado:</span>
-        <span class="debug-value" [class.gesture-active]="currentGestureState !== 'IDLE' && currentGestureState !== 'NO_HANDS'">
-          {{ currentGestureState }}
-        </span>
-      </div>
-      <div class="debug-row">
-        <span class="debug-label">Último:</span>
-        <span class="debug-value gesture-type">{{ lastGesture }}</span>
-      </div>
-      <div class="debug-row">
-        <span class="debug-label">Intensidad:</span>
-        <span class="debug-value">{{ lastIntensity }}</span>
-      </div>
-      <div class="debug-row">
-        <span class="debug-label">Contador:</span>
-        <span class="debug-value counter">{{ counter }}</span>
-      </div>
-    </div>
+            <div class="debug-section">
+                <div class="debug-section-title">Body Tracking</div>
+                <div class="debug-row">
+                    <span class="debug-label">Pose Frames:</span>
+                    <span class="debug-value">{{ poseFrames }}</span>
+                </div>
+                <div class="debug-row">
+                    <span class="debug-label">Landmarks:</span>
+                    <span class="debug-value">{{ lastPoseLen }}</span>
+                </div>
+            </div>
 
-    <!-- ✅ NUEVA SECCIÓN: POINTING DEBUG -->
-    <div class="debug-section" *ngIf="handsCount > 0">
-      <div class="debug-section-title">Pointing Detection</div>
-      <div class="debug-row">
-        <span class="debug-label">Is Pointing:</span>
-        <span class="debug-value" [class.active]="isPointingGesture">
-          {{ isPointingGesture ? 'YES' : 'NO' }}
-        </span>
-      </div>
-      <div class="debug-row">
-        <span class="debug-label">Pointing Count:</span>
-        <span class="debug-value counter">{{ pointingCounter }}</span>
-      </div>
-      <div class="debug-row" *ngIf="currentHandPosition">
-        <span class="debug-label">Hand X:</span>
-        <span class="debug-value">{{ (currentHandPosition.x * 100).toFixed(1) }}%</span>
-      </div>
-      <div class="debug-row" *ngIf="currentHandPosition">
-        <span class="debug-label">Hand Y:</span>
-        <span class="debug-value">{{ (currentHandPosition.y * 100).toFixed(1) }}%</span>
-      </div>
-    </div>
-  </div>
-</div>
-<div class="video-container">
-  <video #videoElement autoplay playsinline muted></video>
-  <canvas #canvasElement class="overlay-canvas"></canvas>
+            <div class="debug-section">
+                <div class="debug-section-title">Hand Tracking</div>
+                <div class="debug-row">
+                    <span class="debug-label">Hands:</span>
+                    <span class="debug-value" [class.active]="handsCount > 0">{{ handsCount }}</span>
+                </div>
+            </div>
 
-  <!-- ✅ PANEL DE DEBUG CON INFORMACIÓN DE POINTING -->
-  <div class="debug-panel">
-    <div class="debug-title">🎥 MediaPipe & Gestures</div>
+            <div class="debug-section">
+                <div class="debug-section-title">Gesture Recognition</div>
+                <div class="debug-row">
+                    <span class="debug-label">State:</span>
+                    <span class="debug-value gesture-active">{{ currentGestureState }}</span>
+                </div>
+                <div class="debug-row">
+                    <span class="debug-label">Last:</span>
+                    <span class="debug-value gesture-type">{{ lastGesture }}</span>
+                </div>
+                <div class="debug-row">
+                    <span class="debug-label">Count:</span>
+                    <span class="debug-value counter">{{ counter }}</span>
+                </div>
+            </div>
 
-    <div class="debug-section">
-      <div class="debug-section-title">Pose Detection</div>
-      <div class="debug-row">
-        <span class="debug-label">Frames:</span>
-        <span class="debug-value">{{ poseFrames }}</span>
-      </div>
-      <div class="debug-row">
-        <span class="debug-label">Landmarks:</span>
-        <span class="debug-value">{{ lastPoseLen }}</span>
-      </div>
-      <div class="debug-row">
-        <span class="debug-label">Hands:</span>
-        <span class="debug-value" [class.active]="handsCount > 0">{{ handsCount }}</span>
-      </div>
-    </div>
-
-    <div class="debug-section">
-      <div class="debug-section-title">Gesture Recognition</div>
-      <div class="debug-row">
-        <span class="debug-label">Estado:</span>
-        <span class="debug-value" [class.gesture-active]="currentGestureState !== 'IDLE' && currentGestureState !== 'NO_HANDS'">
-          {{ currentGestureState }}
-        </span>
-      </div>
-      <div class="debug-row">
-        <span class="debug-label">Último:</span>
-        <span class="debug-value gesture-type">{{ lastGesture }}</span>
-      </div>
-      <div class="debug-row">
-        <span class="debug-label">Intensidad:</span>
-        <span class="debug-value">{{ lastIntensity }}</span>
-      </div>
-      <div class="debug-row">
-        <span class="debug-label">Contador:</span>
-        <span class="debug-value counter">{{ counter }}</span>
-      </div>
-    </div>
-
-    <!-- ✅ NUEVA SECCIÓN: POINTING DEBUG -->
-    <div class="debug-section" *ngIf="handsCount > 0">
-      <div class="debug-section-title">Pointing Detection</div>
-      <div class="debug-row">
-        <span class="debug-label">Is Pointing:</span>
-        <span class="debug-value" [class.active]="isPointingGesture">
-          {{ isPointingGesture ? 'YES' : 'NO' }}
-        </span>
-      </div>
-      <div class="debug-row">
-        <span class="debug-label">Pointing Count:</span>
-        <span class="debug-value counter">{{ pointingCounter }}</span>
-      </div>
-      <div class="debug-row" *ngIf="currentHandPosition">
-        <span class="debug-label">Hand X:</span>
-        <span class="debug-value">{{ (currentHandPosition.x * 100).toFixed(1) }}%</span>
-      </div>
-      <div class="debug-row" *ngIf="currentHandPosition">
-        <span class="debug-label">Hand Y:</span>
-        <span class="debug-value">{{ (currentHandPosition.y * 100).toFixed(1) }}%</span>
-      </div>
-    </div>
-  </div>
+            <div class="debug-hint">
+                Press <kbd>L</kbd> to toggle debug
+            </div>
+        </div>
+    }
 </div>

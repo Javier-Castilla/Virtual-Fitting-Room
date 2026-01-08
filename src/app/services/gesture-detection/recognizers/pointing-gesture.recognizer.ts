@@ -14,19 +14,11 @@ export class PointingGestureRecognizer implements GestureRecognizer {
     handIndex: number,
     handGesture?: HandGestureCategory | null
   ): GestureResult | null {
-    // 🔍 LOG DETALLADO
-    console.log('👆 PointingRecognizer - Estado dedos:', {
-      thumb: fingers.thumb,
-      index: fingers.index,
-      middle: fingers.middle,
-      ring: fingers.ring,
-      pinky: fingers.pinky
-    });
 
     const isPointing = fingers.index && !fingers.middle && !fingers.ring && !fingers.pinky;
 
     if (isPointing) {
-      console.log('✅ POINTING DETECTADO! (thumb:', fingers.thumb, ')');
+      
       return { type: GestureType.POINTING };
     }
 

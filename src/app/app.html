@@ -1,7 +1,46 @@
 <div class="app-container">
-    <app-camera-feed
-            (poseDetected)="onPoseDetected($event)"
-            (handsDetected)="onHandsDetected($event)">
-    </app-camera-feed>
-    <app-scene-viewer></app-scene-viewer>
+    <app-header></app-header>
+
+    <div class="main-content">
+        <app-camera-feed
+            #cameraFeed
+            (gestureDetected)="onGestureDetected($event)">
+        </app-camera-feed>
+
+        <div class="center-area">
+            <app-scene-viewer></app-scene-viewer>
+        </div>
+
+        <app-category-sidebar
+                [selectedCategory]="selectedCategory"
+                [pointingCategory]="pointingCategory"
+                [pointingProgress]="pointingProgress"
+                (categorySelected)="onCategorySelected($event)">
+        </app-category-sidebar>
+    </div>
+
+    <app-gallery-bar
+        #galleryBar
+        [selectedCategory]="selectedCategory"
+        (itemSelected)="onGarmentSelected($event)">
+    </app-gallery-bar>
+
+    @if (peaceGestureActive && peaceProgress > 0) {
+        <div class="peace-progress-container">
+            <div class="peace-progress-bar">
+                <div class="peace-progress-fill" [style.width.%]="peaceProgress"></div>
+            </div>
+            <div class="peace-progress-text">
+                ✌️ Guardando outfit... {{ peaceProgress.toFixed(0) }}%
+            </div>
+        </div>
+    }
+
+    @if (showSavePopup) {
+        <div class="save-popup">
+            <div class="save-popup-icon">✅</div>
+            <div class="save-popup-title">¡OUTFIT GUARDADO!</div>
+            <div class="save-popup-subtitle">Tu look ha sido guardado exitosamente</div>
+        </div>
+    }
 </div>

@@ -1,16 +1,17 @@
-import { Component, OnInit, ViewChild, OnDestroy, AfterViewInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { Subscription, interval } from 'rxjs';
-import { SceneViewerComponent } from './components/scene-viewer/scene-viewer';
-import { CameraFeedComponent } from './components/camera-feed/camera-feed';
-import { HeaderComponent } from './components/header/header';
-import { CategorySidebarComponent } from './components/category-sidebar/category-sidebar';
-import { GalleryBarComponent } from './components/gallery-bar/gallery-bar';
-import { GarmentManagerService } from './services/garment-manager';
-import { MediapipeService } from './services/mediapipe';
-import { GestureDetectorService } from './services/gesture-detection/gesture-detector.service';
-import { GestureType, type GestureResult } from './services/gesture-detection/recognizers/gesture-recognizer.interface';
-import { Garment } from '../domain/model/garment';
+import {AfterViewInit, Component, OnDestroy, OnInit, ViewChild, ChangeDetectorRef} from '@angular/core';
+import {CommonModule} from '@angular/common';
+import {interval, Subscription} from 'rxjs';
+import {SceneViewerComponent} from './components/scene-viewer/scene-viewer';
+import {CameraFeedComponent} from './components/camera-feed/camera-feed';
+import {HeaderComponent} from './components/header/header';
+import {CategorySidebarComponent} from './components/category-sidebar/category-sidebar';
+import {GalleryBarComponent} from './components/gallery-bar/gallery-bar';
+import {GarmentManagerService} from './services/garment-manager';
+import {MediapipeService} from './services/mediapipe';
+import {GestureDetectorService} from './services/gesture-detection/gesture-detector.service';
+import {type GestureResult, GestureType} from './services/gesture-detection/recognizers/gesture-recognizer.interface';
+import {Garment} from '../domain/model/garment';
+import {GarmentCategory} from "../domain/enums/garment-category.enum";
 
 @Component({
   selector: 'app-root',
@@ -23,106 +24,8 @@ import { Garment } from '../domain/model/garment';
     CategorySidebarComponent,
     GalleryBarComponent
   ],
-  template: `
-    <div class="app-container">
-      <app-header></app-header>
-      <div class="main-content">
-        <app-category-sidebar
-          [selectedCategoryId]="selectedCategory"
-          [pointingCategoryId]="pointingCategoryId"
-          [pointingProgress]="pointingProgress"
-          (categorySelected)="onCategorySelected($event)">
-        </app-category-sidebar>
-
-        <div class="center-area">
-          <app-scene-viewer></app-scene-viewer>
-        </div>
-
-        <app-camera-feed
-          #cameraFeed
-          (gestureDetected)="onGestureDetected($event)">
-        </app-camera-feed>
-      </div>
-
-      <app-gallery-bar
-        #galleryBar
-        [selectedCategory]="selectedCategory"
-        (itemSelected)="onGarmentSelected($event)">
-      </app-gallery-bar>
-    </div>
-  `,
-  styles: [`
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    .app-container {
-      width: 100vw;
-      height: 100vh;
-      overflow: hidden;
-      position: relative;
-      background: #1a1a1a;
-    }
-
-    .main-content {
-      width: 100%;
-      height: calc(100vh - 60px);
-      position: relative;
-      display: flex;
-      margin-top: 60px;
-    }
-
-    .center-area {
-      flex: 1;
-      position: relative;
-      margin-left: 250px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 10; /* Por encima del video, por debajo del sidebar */
-    }
-
-    /* Sidebar fijo - encima de todo */
-    ::ng-deep app-category-sidebar {
-      display: block !important;
-      position: fixed;
-      left: 0;
-      top: 60px;
-      bottom: 0;
-      z-index: 1000;
-    }
-
-    /* CÁMARA - Fondo completo detrás de todo */
-    ::ng-deep app-camera-feed {
-      display: block !important;
-      position: fixed;
-      top: 60px;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      width: 100% !important;
-      height: calc(100vh - 60px) !important;
-      z-index: 1; /* Detrás de todo excepto del fondo */
-    }
-
-    /* Gallery bar en la parte inferior - encima del video */
-    ::ng-deep app-gallery-bar {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      z-index: 800;
-    }
-
-    /* Scene viewer encima del video pero debajo del sidebar */
-    ::ng-deep app-scene-viewer {
-      position: relative;
-      z-index: 10;
-    }
-  `],
-
+  templateUrl: './app.html',
+  styleUrls: ['./app.css'],
   providers: [GarmentManagerService, MediapipeService, GestureDetectorService]
 })
 export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
@@ -130,28 +33,46 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('galleryBar') galleryBar!: GalleryBarComponent;
   @ViewChild(CategorySidebarComponent) categorySidebar!: CategorySidebarComponent;
 
-  selectedCategory: string = 'camisas';
+  selectedCategory: GarmentCategory = GarmentCategory.UPPER_BODY;
   currentGarment: Garment | null = null;
+  protected readonly categories = Object.values(GarmentCategory);
 
-  // Pointing gesture tracking
-  pointingCategoryId: string | null = null;
+  private readonly HIT_AREA_MARGIN = 50;
+  private readonly POINTING_SELECTION_DELAY = 1200;
+  private readonly RESET_GRACE_PERIOD = 400;
+  private readonly HEADER_HEIGHT = 60;
+  private readonly PEACE_SAVE_DELAY = 800;
+
+  protected peaceGestureActive = false;
+  private peaceStartTime = 0;
+  peaceProgress = 0;
+  showSavePopup = false;
+
+  pointingCategory: GarmentCategory | null = null;
   pointingProgress: number = 0;
   private pointingStartTime: number = 0;
-  private readonly POINTING_SELECTION_DELAY = 1500;
+  private lastPointingCategory: GarmentCategory | null = null;
+  private lastValidDetectionTime: number = 0;
 
   private pointingCheckInterval?: Subscription;
+  private peaceCheckInterval?: Subscription;
 
   constructor(
-    private garmentManager: GarmentManagerService,
-    private mediapipeService: MediapipeService,
-    private gestureDetector: GestureDetectorService
+      private garmentManager: GarmentManagerService,
+      private mediapipeService: MediapipeService,
+      private gestureDetector: GestureDetectorService,
+      private cdr: ChangeDetectorRef
   ) {}
 
   async ngOnInit(): Promise<void> {
     console.log('🚀 App: Inicializando...');
 
-    this.pointingCheckInterval = interval(100).subscribe(() => {
+    this.pointingCheckInterval = interval(50).subscribe(() => {
       this.checkPointingGesture();
+    });
+
+    this.peaceCheckInterval = interval(50).subscribe(() => {
+      this.checkPeaceGesture();
     });
   }
 
@@ -160,21 +81,68 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   onGestureDetected(gesture: GestureResult): void {
-    console.log('🎯 App: Gesto recibido:', gesture.type);
-
     switch (gesture.type) {
       case GestureType.SWIPE_LEFT:
-        this.navigateGarments(-1);
-        break;
-      case GestureType.SWIPE_RIGHT:
         this.navigateGarments(1);
         break;
+      case GestureType.SWIPE_RIGHT:
+        this.navigateGarments(-1);
+        break;
       case GestureType.PEACE:
-        this.removeCurrentGarment();
         break;
       case GestureType.POINTING:
         break;
     }
+  }
+
+  private checkPeaceGesture(): void {
+    if (!this.cameraFeed) {
+      this.resetPeaceGesture();
+      return;
+    }
+
+    const isPeace = this.cameraFeed.isPeaceGesture;
+
+    if (isPeace) {
+      if (!this.peaceGestureActive) {
+        console.log('✌️ Gesto de paz iniciado');
+        this.peaceGestureActive = true;
+        this.peaceStartTime = Date.now();
+        this.peaceProgress = 0;
+      } else {
+        const elapsed = Date.now() - this.peaceStartTime;
+        this.peaceProgress = Math.min((elapsed / this.PEACE_SAVE_DELAY) * 100, 100);
+
+        if (elapsed >= this.PEACE_SAVE_DELAY && !this.showSavePopup) {
+          console.log('💾 Guardando outfit...');
+          this.saveOutfit();
+        }
+      }
+    } else {
+      this.resetPeaceGesture();
+    }
+
+    this.cdr.detectChanges();
+  }
+
+  private resetPeaceGesture(): void {
+    if (this.peaceGestureActive || this.peaceProgress > 0) {
+      this.peaceGestureActive = false;
+      this.peaceProgress = 0;
+      this.peaceStartTime = 0;
+    }
+  }
+
+  private saveOutfit(): void {
+    console.log('💾 ¡OUTFIT GUARDADO!');
+
+    this.resetPeaceGesture();
+    this.showSavePopup = true;
+
+    setTimeout(() => {
+      this.showSavePopup = false;
+      this.cdr.detectChanges();
+    }, 3000);
   }
 
   private checkPointingGesture(): void {
@@ -184,50 +152,50 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     const handPos = this.cameraFeed.currentHandPosition;
 
     if (!isPointing || !handPos) {
-      this.resetPointingState();
+      this.resetPointingStateWithGracePeriod();
       return;
     }
 
     const screenPos = this.normalizedToScreen(handPos.x, handPos.y);
-
-    console.log(`🔍 Pointing: normalized=(${handPos.x.toFixed(3)}, ${handPos.y.toFixed(3)}) -> screen=(${screenPos.x}, ${screenPos.y})`);
-
     const targetCategory = this.detectCategoryAtPosition(screenPos.x, screenPos.y);
 
     if (targetCategory) {
-      if (this.pointingCategoryId === targetCategory) {
+      this.lastValidDetectionTime = Date.now();
+
+      if (this.pointingCategory === targetCategory) {
         const elapsed = Date.now() - this.pointingStartTime;
         this.pointingProgress = Math.min((elapsed / this.POINTING_SELECTION_DELAY) * 100, 100);
 
         if (elapsed >= this.POINTING_SELECTION_DELAY) {
           console.log(`✅ Categoría seleccionada por pointing: ${targetCategory}`);
           this.onCategorySelected(targetCategory);
-          this.resetPointingState();
+          this.forceResetPointingState();
         }
+      } else if (this.lastPointingCategory === targetCategory &&
+          Date.now() - this.lastValidDetectionTime < this.RESET_GRACE_PERIOD) {
+        this.pointingCategory = targetCategory;
       } else {
-        console.log(`👉 Apuntando a nueva categoría: ${targetCategory}`);
-        this.pointingCategoryId = targetCategory;
+        this.forceResetPointingState();
+        this.pointingCategory = targetCategory;
+        this.lastPointingCategory = targetCategory;
         this.pointingStartTime = Date.now();
         this.pointingProgress = 0;
       }
     } else {
-      this.resetPointingState();
+      this.resetPointingStateWithGracePeriod();
     }
   }
 
   private normalizedToScreen(normalizedX: number, normalizedY: number): { x: number, y: number } {
-    const screenX = window.innerWidth * (1 - normalizedX);
-    const screenY = window.innerHeight * normalizedY;
-
+    const screenX = window.innerWidth * normalizedX;
+    const screenY = (window.innerHeight - this.HEADER_HEIGHT) * normalizedY + this.HEADER_HEIGHT;
     return { x: screenX, y: screenY };
   }
 
-  private detectCategoryAtPosition(x: number, y: number): string | null {
+  private detectCategoryAtPosition(x: number, y: number): GarmentCategory | null {
     if (!this.categorySidebar) return null;
 
-    const categories = this.categorySidebar.categories;
     const sidebarElement = document.querySelector('app-category-sidebar');
-
     if (!sidebarElement) return null;
 
     const categoryElements = sidebarElement.querySelectorAll('.category-item');
@@ -236,36 +204,52 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       const element = categoryElements[i] as HTMLElement;
       const rect = element.getBoundingClientRect();
 
-      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-        const categoryId = categories[i].id;
-        console.log(`✅ Hit detectado en categoría: ${categoryId}`, rect);
-        return categoryId;
+      const expandedRect = {
+        left: rect.left - this.HIT_AREA_MARGIN,
+        right: rect.right + this.HIT_AREA_MARGIN,
+        top: rect.top - this.HIT_AREA_MARGIN,
+        bottom: rect.bottom + this.HIT_AREA_MARGIN
+      };
+
+      if (x >= expandedRect.left && x <= expandedRect.right &&
+          y >= expandedRect.top && y <= expandedRect.bottom) {
+        const category = this.categories[i];
+        return category;
       }
     }
 
     return null;
   }
 
-  private resetPointingState(): void {
-    if (this.pointingCategoryId !== null || this.pointingProgress > 0) {
-      this.pointingCategoryId = null;
-      this.pointingProgress = 0;
-      this.pointingStartTime = 0;
+  private resetPointingStateWithGracePeriod(): void {
+    const timeSinceLastDetection = Date.now() - this.lastValidDetectionTime;
+
+    if (timeSinceLastDetection > this.RESET_GRACE_PERIOD) {
+      this.forceResetPointingState();
     }
   }
 
-  onCategorySelected(categoryId: string): void {
-    if (this.selectedCategory === categoryId) return;
+  private forceResetPointingState(): void {
+    if (this.pointingCategory !== null || this.pointingProgress > 0) {
+      this.pointingCategory = null;
+      this.lastPointingCategory = null;
+      this.pointingProgress = 0;
+      this.pointingStartTime = 0;
+      this.lastValidDetectionTime = 0;
+      this.cdr.detectChanges();
+    }
+  }
 
-    console.log(`📂 Cambiando categoría a: ${categoryId}`);
-    this.selectedCategory = categoryId;
+  onCategorySelected(category: GarmentCategory): void {
+    if (this.selectedCategory === category) return;
+    console.log(`📂 Cambiando categoría a: ${category}`);
+    this.selectedCategory = category;
     this.currentGarment = null;
   }
 
   onGarmentSelected(garment: Garment): void {
     console.log('👕 Prenda seleccionada:', garment.id);
     this.currentGarment = garment;
-
     this.garmentManager.loadGarmentModel(garment);
   }
 
@@ -279,19 +263,9 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  private removeCurrentGarment(): void {
-    if (!this.currentGarment) {
-      console.log('⚠️ No hay prenda seleccionada para eliminar');
-      return;
-    }
-
-    console.log(`🗑️ Eliminando prenda: ${this.currentGarment.id}`);
-    this.garmentManager.removeGarment(this.currentGarment.id);
-    this.currentGarment = null;
-  }
-
   ngOnDestroy(): void {
     this.pointingCheckInterval?.unsubscribe();
+    this.peaceCheckInterval?.unsubscribe();
     console.log('🛑 App: Destruido');
   }
 }

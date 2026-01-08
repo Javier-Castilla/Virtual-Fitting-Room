@@ -39,6 +39,15 @@ export class GestureDetectorService {
   private currentFingerState: FingerState | null = null;
   private lastHandLandmarks: NormalizedLandmark[] | null = null;
 
+  isPeaceNow(): boolean {
+    if (!this.currentFingerState) return false;
+
+    return this.currentFingerState.index &&
+        this.currentFingerState.middle &&
+        !this.currentFingerState.ring &&
+        !this.currentFingerState.pinky;
+  }
+
   detectGesture(landmarks: NormalizedLandmark[][], gestures?: Array<HandGestureCategory | null>): void {
     if (!landmarks || landmarks.length === 0) {
       this.resetAllRecognizers();
@@ -62,12 +71,12 @@ export class GestureDetectorService {
     // 🔍 LOG: Verificar si swipe está activo
     const swipeIsActive = this.swipeRecognizer.isActive && this.swipeRecognizer.isActive(handIndex);
     if (swipeIsActive) {
-      console.log('⚠️ Swipe activo, bloqueando gestos estáticos');
+      
     }
 
     const swipeResult = this.swipeRecognizer.recognize(handLandmarks, fingers, handIndex, handGesture);
     if (swipeResult && this.swipeCooldown.canTrigger()) {
-      console.log('➡️ Swipe detectado:', swipeResult.type);
+      
       this.gestureDetected$.next(swipeResult);
       this.swipeCooldown.trigger();
       return;
@@ -78,21 +87,21 @@ export class GestureDetectorService {
     }
 
     // 🔍 LOG: Intentar detectar gestos estáticos
-    console.log('🔍 Intentando detectar gestos estáticos...');
+    
 
     for (const recognizer of this.staticRecognizers) {
       const gestureResult = recognizer.recognize(handLandmarks, fingers, handIndex, handGesture);
 
       if (gestureResult) {
-        console.log('👉 Gesto reconocido:', gestureResult.type);
+        
 
         if (this.staticCooldown.canTrigger()) {
-          console.log('✅ Cooldown OK - Emitiendo gesto:', gestureResult.type);
+          
           this.gestureDetected$.next(gestureResult);
           this.staticCooldown.trigger();
           break;
         } else {
-          console.log('⏱️ Cooldown activo - NO emite');
+          
         }
       }
     }
