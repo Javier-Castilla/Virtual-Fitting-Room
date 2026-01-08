@@ -4,14 +4,18 @@ import {
   OnDestroy,
   ViewChild,
   ElementRef,
-  AfterViewInit
+  AfterViewInit,
+  Output,
+  EventEmitter
 } from '@angular/core';
+import { CommonModule } from '@angular/common';
 import { MediapipeService } from '../../services/mediapipe';
 import { GestureDetectorService, GestureType, type GestureResult } from '../../services/gesture-detection/gesture-detector.service';
 
 @Component({
   selector: 'app-camera-feed',
   standalone: true,
+  imports: [CommonModule],
   templateUrl: './camera-feed.html',
   styleUrls: ['./camera-feed.css']
 })
@@ -19,16 +23,25 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('videoElement') videoElement!: ElementRef<HTMLVideoElement>;
   @ViewChild('canvasElement') canvasElement!: ElementRef<HTMLCanvasElement>;
 
+  // ✅ AGREGAR: Output para emitir gestos hacia app.ts
+  @Output() gestureDetected = new EventEmitter<GestureResult>();
+  @Output() gestureStateChanged = new EventEmitter<string>();
+
   // Propiedades públicas para el template
   poseFrames = 0;
   lastPoseLen = 0;
   handsCount = 0;
 
-  // ✅ Información de gestos
+  // Información de gestos
   currentGestureState: string = 'IDLE';
   lastGesture: string = 'NONE';
   lastIntensity: number = 0;
   counter: number = 0;
+
+  // Información de POINTING en tiempo real
+  public currentHandPosition: { x: number; y: number } | null = null;
+  public isPointingGesture: boolean = false;
+  public pointingCounter: number = 0;
 
   private animationId?: number;
   private stream?: MediaStream;
@@ -42,12 +55,21 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
     console.log('🎥 Camera Feed: Inicializando MediaPipe...');
     await this.mediapipeService.initialize();
 
-    // ✅ Suscribirse a gestos detectados
+    // ✅ CORREGIDO: Suscribirse Y emitir hacia arriba
     this.gestureDetector.gestureDetected$.subscribe((result: GestureResult) => {
       this.lastGesture = result.type;
       this.lastIntensity = result.intensity || 0;
       this.counter++;
-      console.log('🎯 Gesto detectado en Camera Feed:', result.type);
+
+      if (result.type === GestureType.POINTING) {
+        this.pointingCounter++;
+        console.log('☝️ POINTING EVENT! Contador:', this.pointingCounter);
+      }
+
+      console.log('🎯 Gesto detectado:', result.type);
+
+      // ✅ EMITIR HACIA APP.TS
+      this.gestureDetected.emit(result);
     });
 
     console.log('✅ MediaPipe inicializado');
@@ -64,7 +86,6 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
         video: { width: 1280, height: 720, facingMode: 'user' },
         audio: false
       });
-
       this.videoElement.nativeElement.srcObject = this.stream;
       await this.videoElement.nativeElement.play();
       console.log('✅ Cámara iniciada');
@@ -80,7 +101,6 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
       const ts = performance.now();
 
       const pose = this.mediapipeService.detectPose(video, ts);
-
       if (pose.poseLandmarks) {
         this.poseFrames++;
         this.lastPoseLen = pose.poseLandmarks.length;
@@ -101,11 +121,29 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
       }
 
       if (handsLandmarks.length > 0) {
+        // Procesar gestos
         this.gestureDetector.detectGesture(handsLandmarks, gestures);
-        this.currentGestureState = this.gestureDetector.getCurrentState();
+
+        // Actualizar posición de la mano (dedo índice - landmark 8)
+        const indexFinger = handsLandmarks[0][8];
+        this.currentHandPosition = { x: indexFinger.x, y: indexFinger.y };
+
+        // Detectar POINTING en tiempo real (sin cooldown)
+        this.isPointingGesture = this.gestureDetector.isPointingNow();
+        this.currentGestureState = this.isPointingGesture ? 'POINTING' : 'IDLE';
+
+        // ✅ EMITIR CAMBIO DE ESTADO
+        this.gestureStateChanged.emit(this.currentGestureState);
+
+        if (this.isPointingGesture && this.currentHandPosition) {
+          console.log(`🔍 POINTING: x=${this.currentHandPosition.x.toFixed(3)}, y=${this.currentHandPosition.y.toFixed(3)}`);
+        }
       } else {
+        this.currentHandPosition = null;
+        this.isPointingGesture = false;
         this.gestureDetector.detectGesture([]);
         this.currentGestureState = 'NO_HANDS';
+        this.gestureStateChanged.emit(this.currentGestureState);
       }
 
       this.drawOverlay(handsLandmarks, pose.poseLandmarks);

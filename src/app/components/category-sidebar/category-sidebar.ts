@@ -1,4 +1,4 @@
-import { Component, Output, EventEmitter } from '@angular/core';
+import { Component, Output, EventEmitter, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 export interface Category {
@@ -15,8 +15,9 @@ export interface Category {
 })
 export class CategorySidebarComponent {
   @Output() categorySelected = new EventEmitter<string>();
-
-  selectedCategoryId: string = 'camisas';
+  @Input() selectedCategoryId: string = 'camisas';
+  @Input() pointingCategoryId: string | null = null;
+  @Input() pointingProgress: number = 0; // 0-100
 
   categories: Category[] = [
     { id: 'chaquetas', label: 'Chaquetas' },
@@ -28,5 +29,13 @@ export class CategorySidebarComponent {
   onCategoryClick(category: Category): void {
     this.selectedCategoryId = category.id;
     this.categorySelected.emit(category.id);
+  }
+
+  isPointing(categoryId: string): boolean {
+    return this.pointingCategoryId === categoryId;
+  }
+
+  isSelected(categoryId: string): boolean {
+    return this.selectedCategoryId === categoryId;
   }
 }

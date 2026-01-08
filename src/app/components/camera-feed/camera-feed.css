@@ -24,11 +24,11 @@ video {
   pointer-events: none;
 }
 
-/* ✅ PANEL DE DEBUG DEBAJO DEL HEADER */
+/* ✅ PANEL DE DEBUG - MOVER A LA DERECHA */
 .debug-panel {
   position: absolute;
-  top: 80px; /* Debajo del header */
-  left: 20px;
+  top: 80px;
+  right: 20px; /* Cambiado de left a right */
   background: rgba(0, 0, 0, 0.85);
   color: white;
   padding: 15px 20px;

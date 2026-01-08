@@ -1,6 +1,6 @@
-import { Component, OnInit, ViewChild, OnDestroy } from '@angular/core';
+import { Component, OnInit, ViewChild, OnDestroy, AfterViewInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Subscription } from 'rxjs';
+import { Subscription, interval } from 'rxjs';
 
 import { SceneViewerComponent } from './components/scene-viewer/scene-viewer';
 import { CameraFeedComponent } from './components/camera-feed/camera-feed';
@@ -14,7 +14,6 @@ import { GestureDetectorService } from './services/gesture-detection/gesture-det
 import { GestureType, type GestureResult } from './services/gesture-detection/recognizers/gesture-recognizer.interface';
 import { Outfit } from '../domain/model/outfit';
 import { Garment } from '../domain/model/garment';
-import { GarmentCategory } from '../domain/enums/garment-category.enum';
 
 @Component({
   selector: 'app-root',
@@ -29,13 +28,16 @@ import { GarmentCategory } from '../domain/enums/garment-category.enum';
   ],
   template: `
     <div class="app-container">
-      <app-camera-feed></app-camera-feed>
+      <app-camera-feed #cameraFeed></app-camera-feed>
 
       <app-scene-viewer></app-scene-viewer>
 
       <app-header (menuClick)="onMenuClick()"></app-header>
 
       <app-category-sidebar
+        [selectedCategoryId]="selectedCategory"
+        [pointingCategoryId]="pointingCategoryId"
+        [pointingProgress]="pointingProgress"
         (categorySelected)="onCategorySelected($event)">
       </app-category-sidebar>
 
@@ -48,10 +50,11 @@ import { GarmentCategory } from '../domain/enums/garment-category.enum';
       <!-- Indicador visual de gestos -->
       <div class="gesture-feedback" *ngIf="showGestureFeedback"
            [class.swipe-left]="lastGestureType === 'SWIPE_LEFT'"
-           [class.swipe-right]="lastGestureType === 'SWIPE_RIGHT'">
+           [class.swipe-right]="lastGestureType === 'SWIPE_RIGHT'"
+           [class.pointing]="lastGestureType === 'POINTING'">
         <div class="gesture-icon">{{ gestureIcon }}</div>
         <div class="gesture-text">{{ gestureText }}</div>
-        <div class="gesture-intensity">Intensidad: {{ lastIntensity }}</div>
+        <div class="gesture-intensity">{{ gestureSubtext }}</div>
       </div>
     </div>
   `,
@@ -111,6 +114,10 @@ import { GarmentCategory } from '../domain/enums/garment-category.enum';
       border-right: 5px solid #ff00aa;
     }
 
+    .gesture-feedback.pointing {
+      border: 5px solid #ffa500;
+    }
+
     .gesture-icon {
       font-size: 64px;
       line-height: 1;
@@ -130,19 +137,28 @@ import { GarmentCategory } from '../domain/enums/garment-category.enum';
     }
   `]
 })
-export class App implements OnInit, OnDestroy {
+export class App implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('galleryBar') galleryBar!: GalleryBarComponent;
+  @ViewChild('cameraFeed') cameraFeed!: CameraFeedComponent;
 
   selectedCategory: string = 'camisas';
   showGestureFeedback: boolean = false;
   gestureIcon: string = '';
   gestureText: string = '';
+  gestureSubtext: string = '';
   lastGestureType: string = '';
   lastIntensity: number = 0;
+
+  // Estado de pointing para category sidebar
+  pointingCategoryId: string | null = null;
+  pointingProgress: number = 0;
+  private pointingStartTime: number = 0;
+  private readonly POINTING_DURATION = 1500; // 1.5 segundos
 
   private gestureSub?: Subscription;
   private poseSub?: Subscription;
   private poseWorldSub?: Subscription;
+  private pointingCheckSub?: Subscription;
   private feedbackTimeout: any;
   private latestPose2d: any[] | null = null;
   private latestPoseWorld: any[] | null = null;
@@ -178,42 +194,154 @@ export class App implements OnInit, OnDestroy {
     });
   }
 
+  ngAfterViewInit(): void {
+    console.log('🔵 AppComponent: ngAfterViewInit - Iniciando verificación de pointing');
+
+    // ✅ Iniciar verificación continua de pointing cada 100ms
+    this.pointingCheckSub = interval(100).subscribe(() => {
+      this.checkPointingAtCategory();
+    });
+  }
+
   ngOnDestroy(): void {
     this.gestureSub?.unsubscribe();
     this.poseSub?.unsubscribe();
     this.poseWorldSub?.unsubscribe();
+    this.pointingCheckSub?.unsubscribe();
     if (this.feedbackTimeout) {
       clearTimeout(this.feedbackTimeout);
     }
   }
 
-  private handleGesture(result: GestureResult): void {
-    console.log('👋 Gesto detectado:', result);
-
-    if (!this.galleryBar) {
-      console.warn('⚠️ GalleryBar no disponible');
+  private checkPointingAtCategory(): void {
+    if (!this.cameraFeed) {
       return;
     }
+
+    const handPos = this.cameraFeed.currentHandPosition;
+    const isPointing = this.cameraFeed.isPointingGesture;
+
+    // ✅ LOG DE DEBUG
+    if (isPointing && handPos) {
+      console.log(`🎯 POINTING ACTIVO - Posición: X=${(handPos.x * 100).toFixed(1)}%, Y=${(handPos.y * 100).toFixed(1)}%`);
+    }
+
+    if (!isPointing || !handPos) {
+      if (this.pointingCategoryId) {
+        console.log('🔄 Reseteando pointing (no hay gesto o mano)');
+      }
+      this.resetPointing();
+      return;
+    }
+
+    // Calcular qué categoría está siendo apuntada
+    const targetCategory = this.getCategoryAtPosition(handPos.x, handPos.y);
+
+    console.log(`📍 getCategoryAtPosition(${handPos.x.toFixed(3)}, ${handPos.y.toFixed(3)}) = ${targetCategory}`);
+
+    if (!targetCategory) {
+      if (this.pointingCategoryId) {
+        console.log('⚠️ No hay categoría target, reseteando');
+      }
+      this.resetPointing();
+      return;
+    }
+
+    // Si es una nueva categoría, reiniciar
+    if (targetCategory !== this.pointingCategoryId) {
+      this.pointingCategoryId = targetCategory;
+      this.pointingStartTime = Date.now();
+      this.pointingProgress = 0;
+      console.log(`🎯 ✨ NUEVA CATEGORÍA DETECTADA: ${targetCategory.toUpperCase()}`);
+      return;
+    }
+
+    // Actualizar progreso
+    const elapsed = Date.now() - this.pointingStartTime;
+    this.pointingProgress = Math.min((elapsed / this.POINTING_DURATION) * 100, 100);
+
+    console.log(`⏱️ Progreso en ${targetCategory}: ${this.pointingProgress.toFixed(0)}%`);
+
+    // Confirmar selección al 100%
+    if (this.pointingProgress >= 100) {
+      this.confirmCategorySelection(targetCategory);
+    }
+  }
+
+  private getCategoryAtPosition(x: number, y: number): string | null {
+    // ✅ La cámara está invertida: cuando apuntas a la izquierda, X > 0.5
+    // El sidebar está en la izquierda visual = X > 0.5 en coordenadas
+
+    console.log(`🔍 getCategoryAtPosition: x=${x.toFixed(3)}, y=${y.toFixed(3)}`);
+
+    // El sidebar está a la IZQUIERDA, en imagen invertida es X > 0.5
+    if (x < 0.5) {
+      console.log(`❌ X < 0.5 (${x.toFixed(3)}) - Mano está a la DERECHA, fuera del sidebar`);
+      return null;
+    }
+
+    const categories = ['chaquetas', 'camisas', 'pantalones', 'vestidos'];
+
+    // Zona vertical del sidebar: 30% a 80%
+    if (y < 0.3) {
+      console.log(`❌ Y < 0.3 (${y.toFixed(3)}) - Demasiado ARRIBA`);
+      return null;
+    }
+
+    if (y > 0.8) {
+      console.log(`❌ Y > 0.8 (${y.toFixed(3)}) - Demasiado ABAJO`);
+      return null;
+    }
+
+    // Mapear Y a categoría
+    const adjustedY = (y - 0.3) / 0.5; // Normalizar entre 0 y 1
+    const index = Math.floor(adjustedY * categories.length);
+    const selectedCategory = categories[Math.min(Math.max(index, 0), categories.length - 1)];
+
+    console.log(`✅ Categoría: ${selectedCategory} (índice: ${index}, adjustedY: ${adjustedY.toFixed(3)})`);
+    return selectedCategory;
+  }
+
+  private confirmCategorySelection(categoryId: string): void {
+    console.log(`✅✅✅ CATEGORÍA SELECCIONADA POR POINTING: ${categoryId.toUpperCase()}`);
+
+    this.selectedCategory = categoryId;
+    this.showGestureAnimation('☝️', categoryId.toUpperCase(), 'Categoría seleccionada', 'POINTING');
+
+    this.resetPointing();
+  }
+
+  private resetPointing(): void {
+    this.pointingCategoryId = null;
+    this.pointingProgress = 0;
+    this.pointingStartTime = 0;
+  }
+
+  private handleGesture(result: GestureResult): void {
+    console.log('👋 Gesto detectado:', result);
 
     this.lastIntensity = result.intensity || 0;
 
     switch (result.type) {
       case GestureType.SWIPE_LEFT:
-        // Swipe LEFT = mano se mueve a la IZQUIERDA = navegar al SIGUIENTE (derecha en galería)
-        console.log('⬅️ Swipe LEFT detectado - Navegando al SIGUIENTE');
-        this.galleryBar.navigateNext();
-        this.showGestureAnimation('👉', 'Siguiente →', 'SWIPE_LEFT');
+        if (this.galleryBar) {
+          console.log('⬅️ Swipe LEFT - Siguiente');
+          this.galleryBar.navigateNext();
+          this.showGestureAnimation('👈', 'Siguiente →', `Intensidad: ${this.lastIntensity}`, 'SWIPE_LEFT');
+        }
         break;
 
       case GestureType.SWIPE_RIGHT:
-        // Swipe RIGHT = mano se mueve a la DERECHA = navegar al ANTERIOR (izquierda en galería)
-        console.log('➡️ Swipe RIGHT detectado - Navegando al ANTERIOR');
-        this.galleryBar.navigatePrevious();
-        this.showGestureAnimation('👈', '← Anterior', 'SWIPE_RIGHT');
+        if (this.galleryBar) {
+          console.log('➡️ Swipe RIGHT - Anterior');
+          this.galleryBar.navigatePrevious();
+          this.showGestureAnimation('👉', '← Anterior', `Intensidad: ${this.lastIntensity}`, 'SWIPE_RIGHT');
+        }
         break;
 
       case GestureType.POINTING:
-        console.log('☝️ Pointing detectado');
+        console.log('☝️ Pointing detectado (evento con cooldown)');
+        // El manejo continuo se hace en checkPointingAtCategory
         break;
 
       case GestureType.PEACE:
@@ -222,44 +350,40 @@ export class App implements OnInit, OnDestroy {
     }
   }
 
-  private showGestureAnimation(icon: string, text: string, type: string): void {
-    // Limpiar el timeout anterior si existe
+  private showGestureAnimation(icon: string, text: string, subtext: string, type: string): void {
     if (this.feedbackTimeout) {
       clearTimeout(this.feedbackTimeout);
     }
 
-    // Ocultar primero para forzar re-render
     this.showGestureFeedback = false;
 
-    // Mostrar en el próximo ciclo
     setTimeout(() => {
       this.gestureIcon = icon;
       this.gestureText = text;
+      this.gestureSubtext = subtext;
       this.lastGestureType = type;
       this.showGestureFeedback = true;
 
-      // Ocultar después de 600ms (duración de la animación)
       this.feedbackTimeout = setTimeout(() => {
         this.showGestureFeedback = false;
       }, 600);
     }, 0);
   }
 
-
   onMenuClick(): void {
     console.log('🔵 Menu hamburguesa clickeado');
   }
 
   onCategorySelected(categoryId: string): void {
-    console.log('🔵 Categoría seleccionada:', categoryId);
+    console.log('🔵 Categoría seleccionada manualmente:', categoryId);
     this.selectedCategory = categoryId;
+    this.resetPointing();
   }
 
   async onGarmentSelected(garment: Garment): Promise<void> {
-    console.log('🔵 Prenda seleccionada:', garment.name, '| Categoría:', garment.category);
+    console.log('🔵 Prenda seleccionada:', garment.name);
 
     try {
-      // ✅ ELIMINAR TODAS LAS PRENDAS DE LA MISMA CATEGORÍA ANTES DE CARGAR UNA NUEVA
       const outfit = this.garmentManager.getCurrentOutfit();
       if (outfit) {
         const garmentsToRemove = outfit.garments.filter(g => g.category === garment.category);
@@ -270,11 +394,9 @@ export class App implements OnInit, OnDestroy {
         });
       }
 
-      // Cargar el nuevo modelo
       await this.garmentManager.loadGarmentModel(garment);
       console.log('✅ Modelo cargado:', garment.modelPath);
 
-      // Añadir al outfit
       if (outfit) {
         outfit.addGarment(garment);
         console.log('✅ Prenda añadida al outfit');

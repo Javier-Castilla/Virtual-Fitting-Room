@@ -1,10 +1,27 @@
-<p>category-sidebar works!</p>
 <div class="category-sidebar">
   <button
     *ngFor="let category of categories"
     class="category-btn"
-    [class.active]="selectedCategoryId === category.id"
+    [class.active]="isSelected(category.id)"
+    [class.pointing]="isPointing(category.id)"
     (click)="onCategoryClick(category)">
-    {{ category.label }}
+
+    <span class="category-label">{{ category.label }}</span>
+
+    <!-- Indicador de progreso circular cuando se está apuntando -->
+    <div class="pointing-indicator" *ngIf="isPointing(category.id)">
+      <svg class="progress-ring" width="50" height="50">
+        <circle
+          class="progress-ring-circle"
+          stroke="#00d4ff"
+          stroke-width="3"
+          fill="transparent"
+          r="20"
+          cx="25"
+          cy="25"
+          [style.stroke-dashoffset]="125.6 - (125.6 * pointingProgress / 100)"/>
+      </svg>
+      <div class="progress-icon">☝️</div>
+    </div>
   </button>
 </div>
