@@ -17,8 +17,8 @@ type LoadedGarment = {
     hasSkeleton: boolean;
     shoulderDistance: number;
     hipDistance: number;
-    hipBonesOffset?: THREE.Vector3;      // ✅ NUEVO: Offset de los huesos de cadera
-    shoulderBonesOffset?: THREE.Vector3; // ✅ NUEVO: Offset de los huesos de hombros
+    hipBonesOffset?: THREE.Vector3;
+    shoulderBonesOffset?: THREE.Vector3;
 };
 
 @Injectable({ providedIn: 'root' })
@@ -75,7 +75,6 @@ export class GarmentManagerService {
         const hipDistance = this.calculateBoneDistance(inner, 'hip');
         const hasSkeleton = this.detectSkeleton(inner);
 
-        // ✅ NUEVO: Calcula el offset de los huesos respecto al centro del modelo
         const hipBonesOffset = this.calculateBonesOffset(inner, 'hip');
         const shoulderBonesOffset = this.calculateBonesOffset(inner, 'shoulder');
 
@@ -107,7 +106,6 @@ export class GarmentManagerService {
         });
     }
 
-    // ✅ NUEVO: Calcula dónde están los huesos respecto al centro del modelo
     private calculateBonesOffset(model: THREE.Object3D, type: 'shoulder' | 'hip'): THREE.Vector3 | undefined {
         const skeleton = this.findSkeletonFromModel(model);
         if (!skeleton) return undefined;
@@ -141,7 +139,6 @@ export class GarmentManagerService {
 
         if (!leftBone || !rightBone) return undefined;
 
-        // Calcula el centro entre los dos huesos
         const leftPos = new THREE.Vector3();
         const rightPos = new THREE.Vector3();
         leftBone.getWorldPosition(leftPos);
@@ -149,7 +146,6 @@ export class GarmentManagerService {
 
         const centerPos = new THREE.Vector3().addVectors(leftPos, rightPos).multiplyScalar(0.5);
 
-        // El modelo está centrado en (0,0,0), así que el offset es directamente centerPos
         return centerPos;
     }
 
@@ -175,9 +171,15 @@ export class GarmentManagerService {
         const hasLandmarks = config.anchorLandmarks.every((i: number) => pose2d[i]);
         if (!hasLandmarks) return;
 
-        if (entry.hasSkeleton && pose3d) {
-            this.updateSkeletonBasedGarment(garmentId, entry, pose2d, pose3d);
+        // ✅ Separar lógica: upper-body usa el método original, lower-body usa uno nuevo
+        if (entry.hasSkeleton && pose3d && this.isUpperBody(entry.category)) {
+            // ✅ UPPER BODY - Lógica original que funciona bien
+            this.updateUpperBodyGarment(garmentId, entry, pose2d, pose3d);
+        } else if (entry.hasSkeleton && pose3d && entry.category === GarmentCategory.LOWER_BODY) {
+            // ✅ LOWER BODY - Nueva lógica específica para pantalones
+            this.updateLowerBodyGarment(garmentId, entry, pose2d, pose3d);
         } else {
+            // Fallback para modelos sin esqueleto
             const anchorPos = this.calculateAnchorPosition(pose2d, config.anchorLandmarks);
             const scale = this.calculateScaleFromLandmarks(entry, pose2d, pose3d);
             const rotations = this.calculateRotations(entry.category, pose2d, pose3d);
@@ -186,7 +188,8 @@ export class GarmentManagerService {
         }
     }
 
-    private updateSkeletonBasedGarment(
+    // ✅ MÉTODO ORIGINAL PARA UPPER BODY (sin cambios)
+    private updateUpperBodyGarment(
         garmentId: string,
         entry: LoadedGarment,
         pose2d: any[],
@@ -198,25 +201,19 @@ export class GarmentManagerService {
         const planeHeight = 2 * dist * Math.tan(vFov / 2);
         const planeWidth = planeHeight * cam.aspect;
 
-        const isUpper = this.isUpperBody(entry.category);
+        const leftShoulder2d = pose2d[11];
+        const rightShoulder2d = pose2d[12];
+        const shoulderWidth2d = Math.abs(rightShoulder2d.x - leftShoulder2d.x);
 
-        const refLandmarks = isUpper ? [11, 12] : [23, 24];
-        const left2d = pose2d[refLandmarks[0]];
-        const right2d = pose2d[refLandmarks[1]];
-
-        const width2d = Math.abs(right2d.x - left2d.x);
-
-        if (entry.referenceWidth === 0 || width2d > entry.referenceWidth) {
-            entry.referenceWidth = width2d;
+        if (entry.referenceWidth === 0 || shoulderWidth2d > entry.referenceWidth) {
+            entry.referenceWidth = shoulderWidth2d;
         }
 
-        const effectiveWidth = Math.max(width2d, entry.referenceWidth * 0.7);
-        const userWidthInUnits = effectiveWidth * planeWidth;
-
-        const referenceDistance = isUpper ? entry.shoulderDistance : entry.hipDistance;
+        const effectiveWidth = Math.max(shoulderWidth2d, entry.referenceWidth * 0.7);
+        const userShoulderWidthInUnits = effectiveWidth * planeWidth;
 
         const scale = THREE.MathUtils.clamp(
-            userWidthInUnits / referenceDistance,
+            userShoulderWidthInUnits / entry.shoulderDistance,
             0.1,
             10
         );
@@ -224,36 +221,20 @@ export class GarmentManagerService {
         const targetScale = new THREE.Vector3(scale, scale, scale);
         entry.root.scale.lerp(targetScale, this.smoothing);
 
-        // ✅ Calcula la posición objetivo (dónde están tus caderas/hombros)
-        const anchorX = (left2d.x + right2d.x) * 0.5;
-        let anchorY: number;
+        const torsoCenter = {
+            x: (pose2d[11].x + pose2d[12].x) * 0.5,
+            y: (pose2d[11].y + pose2d[12].y + pose2d[23].y + pose2d[24].y) * 0.25
+        };
 
-        if (isUpper) {
-            anchorY = (pose2d[11].y + pose2d[12].y + pose2d[23].y + pose2d[24].y) * 0.25;
-        } else {
-            anchorY = (pose2d[23].y + pose2d[24].y) * 0.5;
-        }
+        const shoulderZ = (pose3d[11].z + pose3d[12].z) * 0.5;
+        const targetZ = this.zPlane + shoulderZ * 2.5;
 
-        const refZ = (pose3d[refLandmarks[0]].z + pose3d[refLandmarks[1]].z) * 0.5;
-        const targetZ = this.zPlane + refZ * 2.5;
-
-        let x = (anchorX - 0.5) * planeWidth;
-        let y = (0.5 - anchorY) * planeHeight;
-
-        // ✅ NUEVO: Compensa el offset de los huesos
-        const bonesOffset = isUpper ? entry.shoulderBonesOffset : entry.hipBonesOffset;
-        if (bonesOffset) {
-            // Los huesos están en bonesOffset respecto al centro del modelo
-            // Queremos que los huesos estén en (x, y), así que movemos el root
-            x -= bonesOffset.x * scale;
-            y -= bonesOffset.y * scale;
-            // No compensamos Z porque trabajamos en 2D principalmente
-        }
+        const x = (torsoCenter.x - 0.5) * planeWidth;
+        const y = (0.5 - torsoCenter.y) * planeHeight;
 
         const targetPos = new THREE.Vector3(x, y, targetZ);
         entry.root.position.lerp(targetPos, this.smoothing);
 
-        // Calcula rotación Y (profundidad)
         if (pose3d.length >= 25) {
             const ls3d = pose3d[11];
             const rs3d = pose3d[12];
@@ -282,18 +263,105 @@ export class GarmentManagerService {
             }
         }
 
-        // Calcula rotación Z (inclinación lateral)
-        const dx = right2d.x - left2d.x;
-        const dy = right2d.y - left2d.y;
+        entry.root.rotation.x = THREE.MathUtils.lerp(entry.root.rotation.x, 0, this.smoothing);
+        entry.root.rotation.z = THREE.MathUtils.lerp(entry.root.rotation.z, 0, this.smoothing);
+
+        this.skeletonRetarget.updateSkeleton(entry.root, pose3d, 'upper', garmentId);
+    }
+
+    // ✅ NUEVO MÉTODO ESPECÍFICO PARA LOWER BODY
+    private updateLowerBodyGarment(
+        garmentId: string,
+        entry: LoadedGarment,
+        pose2d: any[],
+        pose3d: any[]
+    ): void {
+        const cam = this.threeService.camera;
+        const dist = Math.max(cam.position.z - this.zPlane, 0.25);
+        const vFov = THREE.MathUtils.degToRad(cam.fov);
+        const planeHeight = 2 * dist * Math.tan(vFov / 2);
+        const planeWidth = planeHeight * cam.aspect;
+
+        // Calcula el ancho de las caderas en 2D
+        const leftHip2d = pose2d[23];
+        const rightHip2d = pose2d[24];
+        const hipWidth2d = Math.abs(rightHip2d.x - leftHip2d.x);
+
+        if (entry.referenceWidth === 0 || hipWidth2d > entry.referenceWidth) {
+            entry.referenceWidth = hipWidth2d;
+        }
+
+        const effectiveWidth = Math.max(hipWidth2d, entry.referenceWidth * 0.7);
+        const userHipWidthInUnits = effectiveWidth * planeWidth;
+
+        const scale = THREE.MathUtils.clamp(
+            userHipWidthInUnits / entry.hipDistance,
+            0.1,
+            10
+        );
+
+        const targetScale = new THREE.Vector3(scale, scale, scale);
+        entry.root.scale.lerp(targetScale, this.smoothing);
+
+        // ✅ Posiciona en el centro de las caderas
+        const hipCenterX = (leftHip2d.x + rightHip2d.x) * 0.5;
+        const hipCenterY = (leftHip2d.y + rightHip2d.y) * 0.5;
+
+        const hipZ = (pose3d[23].z + pose3d[24].z) * 0.5;
+        const targetZ = this.zPlane + hipZ * 2.5;
+
+        let x = (hipCenterX - 0.5) * planeWidth;
+        let y = (0.5 - hipCenterY) * planeHeight;
+
+        // Compensa el offset de los huesos de cadera
+        if (entry.hipBonesOffset) {
+            x -= entry.hipBonesOffset.x * scale;
+            y -= entry.hipBonesOffset.y * scale;
+        }
+
+        const targetPos = new THREE.Vector3(x, y, targetZ);
+        entry.root.position.lerp(targetPos, this.smoothing);
+
+        // Calcula rotación Z (inclinación de caderas)
+        const dx = rightHip2d.x - leftHip2d.x;
+        const dy = rightHip2d.y - leftHip2d.y;
         let rotZ = -Math.atan2(dy, dx);
         rotZ = this.normalizeAngle(rotZ);
+
+        // Calcula rotación Y (giro del cuerpo)
+        if (pose3d.length >= 25) {
+            const ls3d = pose3d[11];
+            const rs3d = pose3d[12];
+            const lh3d = pose3d[23];
+            const rh3d = pose3d[24];
+
+            if (ls3d && rs3d && lh3d && rh3d) {
+                const hipVec = new THREE.Vector3(
+                    rh3d.x - lh3d.x,
+                    rh3d.y - lh3d.y,
+                    rh3d.z - lh3d.z
+                ).normalize();
+
+                const spineVec = new THREE.Vector3(
+                    (ls3d.x + rs3d.x) / 2 - (lh3d.x + rh3d.x) / 2,
+                    (ls3d.y + rs3d.y) / 2 - (lh3d.y + rh3d.y) / 2,
+                    (ls3d.z + rs3d.z) / 2 - (lh3d.z + rh3d.z) / 2
+                ).normalize();
+
+                const forward = new THREE.Vector3()
+                    .crossVectors(hipVec, spineVec)
+                    .normalize();
+
+                const rotY = -Math.atan2(forward.x, forward.z);
+                entry.root.rotation.y = THREE.MathUtils.lerp(entry.root.rotation.y, rotY, this.smoothing);
+            }
+        }
 
         entry.root.rotation.x = THREE.MathUtils.lerp(entry.root.rotation.x, 0, this.smoothing);
         entry.root.rotation.z = THREE.MathUtils.lerp(entry.root.rotation.z, rotZ, this.smoothing);
 
-        // Anima el skeleton
-        const category = isUpper ? 'upper' : 'lower';
-        this.skeletonRetarget.updateSkeleton(entry.root, pose3d, category, garmentId);
+        // ✅ Skeleton retargeting para animar las piernas
+        this.skeletonRetarget.updateSkeleton(entry.root, pose3d, 'lower', garmentId);
     }
 
     private calculateBoneDistance(model: THREE.Object3D, type: 'shoulder' | 'hip'): number {
