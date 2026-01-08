@@ -4,12 +4,13 @@
     width: 100%;
     height: 100%;
     z-index: 0;
+    background: #000; /* evita “huecos” al usar contain */
 }
 
 video {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain; /* <-- clave: evita recorte que descoordina landmarks */
 }
 
 .overlay-canvas {

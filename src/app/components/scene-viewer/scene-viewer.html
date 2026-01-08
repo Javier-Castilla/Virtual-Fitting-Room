@@ -1,5 +1,7 @@
-<div class="debug">
-    Model: {{ modelStatus }}
-</div>
+<canvas #rendererCanvas></canvas>
 
-<div #rendererCanvas class="canvas-container"></div>
+<div class="status-overlay">
+    <p>{{ modelStatus }}</p>
+    <p>Pose frames: {{ poseFrames }}</p>
+    <p>Render frames: {{ renderFrames }}</p>
+</div>

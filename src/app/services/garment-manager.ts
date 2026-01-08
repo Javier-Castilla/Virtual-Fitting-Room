@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import * as THREE from 'three';
 import { ModelLoaderService } from './model-loader';
 import { ThreejsService } from './threejs';
-import { Outfit } from '../../domain/model/outfit';
+import { SkeletonRetargetService } from './skeleton-retarget.service';
 import { Garment } from '../../domain/model/garment';
 import { GarmentCategory } from '../../domain/enums/garment-category.enum';
 
@@ -14,39 +14,39 @@ type LoadedGarment = {
     referenceWidth: number;
     category: GarmentCategory;
     visible: boolean;
+    hasSkeleton: boolean;
+    shoulderDistance: number; // ⭐ NUEVO: Distancia entre hombros del modelo
 };
 
 @Injectable({ providedIn: 'root' })
 export class GarmentManagerService {
-    private currentOutfit: Outfit | null = null;
     private loaded: Map<string, LoadedGarment> = new Map();
     private smoothing = 0.3;
-    private zPlane = 0; // ⭐ VUELTO A 0 (original)
+    private zPlane = 0;
 
-    // ⭐ CONFIGURACIÓN ORIGINAL (casi sin cambios)
     private categoryConfig: Record<GarmentCategory, {
         widthFactor: number;
         anchorLandmarks: number[];
         scaleLandmarks: number[];
     }> = {
         [GarmentCategory.UPPER_BODY]: {
-            widthFactor: 1.3, // ⭐ Solo 10% más grande que tu original (1.2 → 1.3)
-            anchorLandmarks: [11, 12, 23, 24],
+            widthFactor: 1.0, // ⭐ Cambiado a 1.0 para escala exacta
+            anchorLandmarks: [11, 12], // ⭐ Solo hombros para UPPER_BODY
             scaleLandmarks: [11, 12]
         },
         [GarmentCategory.LOWER_BODY]: {
-            widthFactor: 1.2, // ⭐ Original era 1.1, ahora 1.2
+            widthFactor: 1.2,
             anchorLandmarks: [23, 24, 25, 26],
             scaleLandmarks: [23, 24]
         },
         [GarmentCategory.FOOTWEAR]: {
-            widthFactor: 1.1, // ⭐ Original era 1.0, ahora 1.1
+            widthFactor: 1.1,
             anchorLandmarks: [27, 28, 29, 30],
             scaleLandmarks: [27, 28]
         },
         [GarmentCategory.FULL_BODY]: {
-            widthFactor: 1.25, // ⭐ Original era 1.15, ahora 1.25
-            anchorLandmarks: [11, 12, 23, 24],
+            widthFactor: 1.0,
+            anchorLandmarks: [11, 12],
             scaleLandmarks: [11, 12]
         },
         [GarmentCategory.ACCESSORY]: {
@@ -58,10 +58,11 @@ export class GarmentManagerService {
 
     constructor(
         private modelLoader: ModelLoaderService,
-        private threeService: ThreejsService
+        private threeService: ThreejsService,
+        private skeletonRetarget: SkeletonRetargetService
     ) {}
 
-    async loadGarmentModel(garment: Garment): Promise<void> {
+    async loadGarment(garment: Garment): Promise<void> {
         const inner = await this.modelLoader.loadModel(garment.modelPath);
         inner.name = garment.id;
         inner.updateMatrixWorld(true);
@@ -76,10 +77,15 @@ export class GarmentManagerService {
         const root = new THREE.Group();
         root.name = `${garment.id}__root`;
         root.add(inner);
-        root.visible = false; // Ocultar por defecto
+        root.visible = false;
 
         const baseWidth = Math.max(size.x, 1e-6);
         const baseHeight = Math.max(size.y, 1e-6);
+
+        // ⭐ NUEVO: Calcular distancia entre hombros del modelo
+        const shoulderDistance = this.calculateModelShoulderDistance(inner);
+
+        const hasSkeleton = this.detectSkeleton(inner);
 
         this.loaded.set(garment.id, {
             root,
@@ -88,14 +94,22 @@ export class GarmentManagerService {
             baseHeight,
             referenceWidth: 0,
             category: garment.category,
-            visible: false
+            visible: false,
+            hasSkeleton,
+            shoulderDistance
         });
 
         this.threeService.scene.add(root);
-        console.log('👔 Prenda cargada (oculta):', garment.id, garment.category);
+        console.log('✅ Garment loaded:', {
+            id: garment.id,
+            category: garment.category,
+            hasSkeleton: hasSkeleton ? '🦴' : '❌',
+            baseWidth,
+            shoulderDistance: shoulderDistance.toFixed(3)
+        });
     }
 
-    updateAllGarments(poseLandmarks2d: any[], poseLandmarks3d?: any[]): void {
+    updateGarments(poseLandmarks2d: any[], poseLandmarks3d?: any[]): void {
         if (!poseLandmarks2d || poseLandmarks2d.length < 33) return;
 
         this.loaded.forEach((entry, garmentId) => {
@@ -114,21 +128,91 @@ export class GarmentManagerService {
         const config = this.categoryConfig[entry.category];
         if (!config) return;
 
-        // Verificar landmarks necesarios
         const hasLandmarks = config.anchorLandmarks.every(i => pose2d[i]);
         if (!hasLandmarks) return;
 
-        // Calcular posición de anclaje
         const anchorPos = this.calculateAnchorPosition(pose2d, config.anchorLandmarks);
-
-        // Calcular escala
-        const scale = this.calculateScale(entry, pose2d, config);
-
-        // Calcular rotaciones
+        const scale = this.calculateScaleFromShoulders(entry, pose2d, pose3d);
         const rotations = this.calculateRotations(entry.category, pose2d, pose3d);
 
-        // Aplicar transformaciones con suavizado
         this.applyTransformations(entry, anchorPos, scale, rotations);
+
+        // ⭐ REACTIVAR skeleton retarget
+        if (entry.hasSkeleton && pose3d) {
+            const category = this.isUpperBody(entry.category) ? 'upper' : 'lower';
+            this.skeletonRetarget.updateSkeleton(entry.root, pose3d, category, garmentId);
+        }
+    }
+
+    // ⭐ NUEVO: Calcular distancia entre hombros del modelo en bind pose
+    private calculateModelShoulderDistance(model: THREE.Object3D): number {
+        const skeleton = this.findSkeletonFromModel(model);
+        if (!skeleton) {
+            console.warn('⚠️ No skeleton found, using bounding box width');
+            const bbox = new THREE.Box3().setFromObject(model);
+            return bbox.max.x - bbox.min.x;
+        }
+
+        // Buscar huesos de hombros
+        const leftShoulder = skeleton.bones.find(b =>
+            b.name.toLowerCase().includes('leftshoulder') ||
+            b.name.toLowerCase().includes('left shoulder')
+        );
+        const rightShoulder = skeleton.bones.find(b =>
+            b.name.toLowerCase().includes('rightshoulder') ||
+            b.name.toLowerCase().includes('right shoulder')
+        );
+
+        if (leftShoulder && rightShoulder) {
+            const leftPos = new THREE.Vector3();
+            const rightPos = new THREE.Vector3();
+            leftShoulder.getWorldPosition(leftPos);
+            rightShoulder.getWorldPosition(rightPos);
+
+            const distance = leftPos.distanceTo(rightPos);
+            console.log('📏 Shoulder bones distance:', distance);
+            return distance;
+        }
+
+        // Fallback: usar bounding box
+        const bbox = new THREE.Box3().setFromObject(model);
+        return bbox.max.x - bbox.min.x;
+    }
+
+    // ⭐ NUEVO: Calcular escala basada en distancia entre hombros
+    private calculateScaleFromShoulders(
+        entry: LoadedGarment,
+        pose2d: any[],
+        pose3d?: any[]
+    ): number {
+        // Calcular distancia 2D entre hombros del usuario
+        const leftShoulder2d = pose2d[11];
+        const rightShoulder2d = pose2d[12];
+
+        const shoulderWidth2d = Math.abs(rightShoulder2d.x - leftShoulder2d.x);
+
+        if (shoulderWidth2d < 0.02) return entry.root.scale.x;
+
+        // Guardar referencia si es la primera vez o si es mayor
+        if (entry.referenceWidth === 0 || shoulderWidth2d > entry.referenceWidth) {
+            entry.referenceWidth = shoulderWidth2d;
+        }
+
+        const effectiveWidth = Math.max(shoulderWidth2d, entry.referenceWidth * 0.7);
+
+        // Convertir a unidades de pantalla
+        const cam = this.threeService.camera;
+        const dist = Math.max(cam.position.z - this.zPlane, 0.25);
+        const vFov = THREE.MathUtils.degToRad(cam.fov);
+        const planeHeight = 2 * dist * Math.tan(vFov / 2);
+        const planeWidth = planeHeight * cam.aspect;
+
+        const userShoulderWidthInUnits = effectiveWidth * planeWidth;
+
+        // ⭐ Escala = ancho de hombros del usuario / ancho de hombros del modelo
+        let scale = userShoulderWidthInUnits / entry.shoulderDistance;
+
+        return THREE.MathUtils.clamp(scale, 0.1, 10);
     }
 
     private calculateAnchorPosition(pose2d: any[], landmarkIndices: number[]): { x: number; y: number } {
@@ -143,29 +227,6 @@ export class GarmentManagerService {
         };
     }
 
-    private calculateScale(entry: LoadedGarment, pose2d: any[], config: any): number {
-        const [i1, i2] = config.scaleLandmarks;
-        const width = Math.abs(pose2d[i2].x - pose2d[i1].x);
-
-        if (width < 0.02) return entry.root.scale.x;
-
-        if (entry.referenceWidth === 0 || width > entry.referenceWidth) {
-            entry.referenceWidth = width;
-        }
-
-        const effectiveWidth = Math.max(width, entry.referenceWidth * 0.6);
-
-        const cam = this.threeService.camera;
-        const dist = Math.max(cam.position.z - this.zPlane, 0.25);
-        const vFov = THREE.MathUtils.degToRad(cam.fov);
-        const planeHeight = 2 * dist * Math.tan(vFov / 2);
-        const planeWidth = planeHeight * cam.aspect;
-
-        const targetWidth = effectiveWidth * planeWidth * config.widthFactor;
-        let scale = targetWidth / entry.baseWidth;
-        return THREE.MathUtils.clamp(scale, 0.02, 20);
-    }
-
     private calculateRotations(
         category: GarmentCategory,
         pose2d: any[],
@@ -173,7 +234,6 @@ export class GarmentManagerService {
     ): { x: number; y: number; z: number } {
         let rotX = 0, rotY = 0, rotZ = 0;
 
-        // Rotación Z (inclinación lateral)
         if (category === GarmentCategory.UPPER_BODY || category === GarmentCategory.FULL_BODY) {
             const ls = pose2d[11];
             const rs = pose2d[12];
@@ -196,7 +256,6 @@ export class GarmentManagerService {
             }
         }
 
-        // Rotación Y (giro del cuerpo)
         if (pose3d && pose3d.length >= 25) {
             if (category === GarmentCategory.UPPER_BODY || category === GarmentCategory.FULL_BODY) {
                 const ls3d = pose3d[11];
@@ -222,19 +281,6 @@ export class GarmentManagerService {
                         .normalize();
 
                     rotY = -Math.atan2(forward.x, forward.z);
-                }
-            } else if (category === GarmentCategory.LOWER_BODY) {
-                const lh3d = pose3d[23];
-                const rh3d = pose3d[24];
-
-                if (lh3d && rh3d) {
-                    const hipVec = new THREE.Vector3(
-                        rh3d.x - lh3d.x,
-                        rh3d.y - lh3d.y,
-                        rh3d.z - lh3d.z
-                    ).normalize();
-
-                    rotY = -Math.atan2(hipVec.x, hipVec.z);
                 }
             }
         }
@@ -274,12 +320,31 @@ export class GarmentManagerService {
         entry.root.rotation.z = THREE.MathUtils.lerp(entry.root.rotation.z, rotations.z, this.smoothing);
     }
 
+    private detectSkeleton(model: THREE.Object3D): boolean {
+        return this.findSkeletonFromModel(model) !== null;
+    }
+
+    private findSkeletonFromModel(model: THREE.Object3D): THREE.Skeleton | null {
+        let skeleton: THREE.Skeleton | null = null;
+        model.traverse((child) => {
+            const mesh = child as THREE.SkinnedMesh;
+            if (mesh?.isSkinnedMesh && mesh.skeleton) {
+                skeleton = mesh.skeleton;
+            }
+        });
+        return skeleton;
+    }
+
+    private isUpperBody(category: GarmentCategory): boolean {
+        return category === GarmentCategory.UPPER_BODY || category === GarmentCategory.FULL_BODY;
+    }
+
     showGarment(garmentId: string): void {
         const entry = this.loaded.get(garmentId);
         if (entry) {
             entry.visible = true;
             entry.root.visible = true;
-            console.log('👁️ Mostrando:', garmentId);
+            console.log('👁️ Showing:', garmentId);
         }
     }
 
@@ -288,7 +353,6 @@ export class GarmentManagerService {
         if (entry) {
             entry.visible = false;
             entry.root.visible = false;
-            console.log('🙈 Ocultando:', garmentId);
         }
     }
 
@@ -297,25 +361,7 @@ export class GarmentManagerService {
         if (!entry) return;
 
         this.threeService.scene.remove(entry.root);
+        this.skeletonRetarget.clearCache(garmentId);
         this.loaded.delete(garmentId);
-        console.log('🗑️ Eliminada:', garmentId);
-    }
-
-    getLoadedGarments(): string[] {
-        return Array.from(this.loaded.keys());
-    }
-
-    getGarmentsByCategory(category: GarmentCategory): string[] {
-        return Array.from(this.loaded.entries())
-            .filter(([_, entry]) => entry.category === category)
-            .map(([id, _]) => id);
-    }
-
-    setOutfit(outfit: Outfit): void {
-        this.currentOutfit = outfit;
-    }
-
-    getCurrentOutfit(): Outfit | null {
-        return this.currentOutfit;
     }
 }
