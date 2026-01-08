@@ -3,23 +3,29 @@ import * as THREE from 'three';
 
 export type Landmark3D = { x: number; y: number; z: number };
 
-interface DetectedBones {
+type CachedBones = {
+    skeleton: THREE.Skeleton;
     leftShoulder?: THREE.Bone;
     leftElbow?: THREE.Bone;
+    leftWrist?: THREE.Bone;
     rightShoulder?: THREE.Bone;
     rightElbow?: THREE.Bone;
-}
-
-interface BoneInitialState {
-    bone: THREE.Bone;
-    initialQuat: THREE.Quaternion;
-}
+    rightWrist?: THREE.Bone;
+    leftShoulderBindQuat?: THREE.Quaternion;
+    leftElbowBindQuat?: THREE.Quaternion;
+    rightShoulderBindQuat?: THREE.Quaternion;
+    rightElbowBindQuat?: THREE.Quaternion;
+};
 
 @Injectable({ providedIn: 'root' })
 export class SkeletonRetargetService {
-    private boneCache = new Map<string, DetectedBones>();
-    private initialStates = new Map<string, Map<string, BoneInitialState>>();
-    private readonly SMOOTHING = 0.25;
+    private bones = new Map<string, CachedBones>();
+    private frameCount = 0;
+    private mirrored = true;
+
+    setMirrored(value: boolean): void {
+        this.mirrored = value;
+    }
 
     updateSkeleton(
         model: THREE.Object3D,
@@ -34,157 +40,126 @@ export class SkeletonRetargetService {
 
         model.updateMatrixWorld(true);
 
-        // Inicializar cache
-        if (!this.boneCache.has(modelId)) {
-            const bones = this.detectBones(skeleton);
-            this.boneCache.set(modelId, bones);
+        if (!this.bones.has(modelId)) {
+            const leftShoulder = skeleton.bones.find(b => b.name === 'LeftShoulder');
+            const leftElbow = skeleton.bones.find(b => b.name === 'LeftElbow');
+            const leftWrist = skeleton.bones.find(b => b.name === 'LeftWrist');
 
-            // Guardar estados iniciales
-            const states = new Map<string, BoneInitialState>();
-            if (bones.leftShoulder) {
-                states.set('leftShoulder', {
-                    bone: bones.leftShoulder,
-                    initialQuat: bones.leftShoulder.quaternion.clone()
-                });
-            }
-            if (bones.leftElbow) {
-                states.set('leftElbow', {
-                    bone: bones.leftElbow,
-                    initialQuat: bones.leftElbow.quaternion.clone()
-                });
-            }
-            if (bones.rightShoulder) {
-                states.set('rightShoulder', {
-                    bone: bones.rightShoulder,
-                    initialQuat: bones.rightShoulder.quaternion.clone()
-                });
-            }
-            if (bones.rightElbow) {
-                states.set('rightElbow', {
-                    bone: bones.rightElbow,
-                    initialQuat: bones.rightElbow.quaternion.clone()
-                });
-            }
-            this.initialStates.set(modelId, states);
+            const rightShoulder = skeleton.bones.find(b => b.name === 'RightShoulder');
+            const rightElbow = skeleton.bones.find(b => b.name === 'RightElbow');
+            const rightWrist = skeleton.bones.find(b => b.name === 'RightWrist');
 
-            console.log('🦴 Bones initialized');
+            this.bones.set(modelId, {
+                skeleton,
+                leftShoulder,
+                leftElbow,
+                leftWrist,
+                rightShoulder,
+                rightElbow,
+                rightWrist,
+                leftShoulderBindQuat: leftShoulder?.quaternion.clone(),
+                leftElbowBindQuat: leftElbow?.quaternion.clone(),
+                rightShoulderBindQuat: rightShoulder?.quaternion.clone(),
+                rightElbowBindQuat: rightElbow?.quaternion.clone()
+            });
         }
 
-        const bones = this.boneCache.get(modelId)!;
-        const states = this.initialStates.get(modelId)!;
+        const cached = this.bones.get(modelId);
+        if (!cached) return;
 
         if (category === 'upper') {
-            // ⭐ Aplicar rotaciones simples por eje
-            this.simpleArmRotation(
-                bones.leftShoulder,
-                bones.leftElbow,
-                states.get('leftShoulder'),
-                states.get('leftElbow'),
-                worldLandmarks[11], // Shoulder
-                worldLandmarks[13], // Elbow
-                worldLandmarks[15]  // Wrist
+            this.animateArm(
+                cached.leftShoulder,
+                cached.leftElbow,
+                cached.leftShoulderBindQuat,
+                cached.leftElbowBindQuat,
+                worldLandmarks[11],
+                worldLandmarks[13],
+                worldLandmarks[15],
+                'left'
             );
 
-            this.simpleArmRotation(
-                bones.rightShoulder,
-                bones.rightElbow,
-                states.get('rightShoulder'),
-                states.get('rightElbow'),
-                worldLandmarks[12], // Shoulder
-                worldLandmarks[14], // Elbow
-                worldLandmarks[16]  // Wrist
+            this.animateArm(
+                cached.rightShoulder,
+                cached.rightElbow,
+                cached.rightShoulderBindQuat,
+                cached.rightElbowBindQuat,
+                worldLandmarks[12],
+                worldLandmarks[14],
+                worldLandmarks[16],
+                'right'
             );
         }
 
-        skeleton.update();
+        cached.skeleton.update();
+        this.frameCount++;
     }
 
-    // ⭐ Rotación simple de brazo usando ángulos
-    private simpleArmRotation(
+    private toRig(lm: Landmark3D): THREE.Vector3 {
+        const sx = this.mirrored ? 1 : -1;
+        return new THREE.Vector3(sx * lm.x, -lm.y, -lm.z);
+    }
+
+    private animateArm(
         shoulderBone: THREE.Bone | undefined,
         elbowBone: THREE.Bone | undefined,
-        shoulderState: BoneInitialState | undefined,
-        elbowState: BoneInitialState | undefined,
+        shoulderBindQuat: THREE.Quaternion | undefined,
+        elbowBindQuat: THREE.Quaternion | undefined,
         shoulderLM: Landmark3D,
         elbowLM: Landmark3D,
-        wristLM: Landmark3D
+        wristLM: Landmark3D,
+        side: 'left' | 'right'
     ): void {
-        // 1. Rotar hombro
-        if (shoulderBone && shoulderState) {
-            // Resetear a bind pose
-            shoulderBone.quaternion.copy(shoulderState.initialQuat);
+        if (!shoulderBone || !elbowBone || !shoulderBindQuat || !elbowBindQuat) return;
 
-            // Calcular ángulos de rotación
-            const shoulderToElbow = {
-                x: -(elbowLM.x - shoulderLM.x),
-                y: -(elbowLM.y - shoulderLM.y),
-                z: -(elbowLM.z - shoulderLM.z)
-            };
+        const S = this.toRig(shoulderLM);
+        const E = this.toRig(elbowLM);
+        const W = this.toRig(wristLM);
 
-            // Rotación en Z (elevar/bajar brazo)
-            const angleZ = Math.atan2(shoulderToElbow.y, shoulderToElbow.x);
+        shoulderBone.quaternion.copy(shoulderBindQuat);
+        elbowBone.quaternion.copy(elbowBindQuat);
 
-            // Rotación en Y (adelante/atrás)
-            const angleY = Math.atan2(shoulderToElbow.z, Math.sqrt(shoulderToElbow.x ** 2 + shoulderToElbow.y ** 2));
+        shoulderBone.updateWorldMatrix(false, false);
+        elbowBone.updateWorldMatrix(false, false);
 
-            // Aplicar rotaciones
-            const rotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angleZ);
-            const rotY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angleY);
+        const shoulderWorldPos = new THREE.Vector3();
+        const elbowWorldPos = new THREE.Vector3();
+        shoulderBone.getWorldPosition(shoulderWorldPos);
+        elbowBone.getWorldPosition(elbowWorldPos);
 
-            const targetQuat = shoulderState.initialQuat.clone()
-                .multiply(rotY)
-                .multiply(rotZ);
+        const currentUpperDir = new THREE.Vector3().subVectors(elbowWorldPos, shoulderWorldPos).normalize();
+        const targetUpperDir = new THREE.Vector3().subVectors(E, S).normalize();
 
-            shoulderBone.quaternion.slerp(targetQuat, this.SMOOTHING);
+        const parentWorldQuat = new THREE.Quaternion();
+        if (shoulderBone.parent) {
+            shoulderBone.parent.getWorldQuaternion(parentWorldQuat);
         }
 
-        // 2. Rotar codo
-        if (elbowBone && elbowState) {
-            // Resetear a bind pose
-            elbowBone.quaternion.copy(elbowState.initialQuat);
+        const upperRotation = new THREE.Quaternion().setFromUnitVectors(currentUpperDir, targetUpperDir);
+        const newShoulderWorldQuat = upperRotation.multiply(shoulderBone.getWorldQuaternion(new THREE.Quaternion()));
+        const newShoulderLocalQuat = parentWorldQuat.clone().invert().multiply(newShoulderWorldQuat);
+        shoulderBone.quaternion.copy(newShoulderLocalQuat);
 
-            // Calcular ángulo del codo
-            const elbowToWrist = {
-                x: -(wristLM.x - elbowLM.x),
-                y: -(wristLM.y - elbowLM.y),
-                z: -(wristLM.z - elbowLM.z)
-            };
+        shoulderBone.updateWorldMatrix(false, false);
+        elbowBone.updateWorldMatrix(false, false);
 
-            // Calcular flexión del codo (solo en un eje)
-            const elbowAngle = Math.atan2(elbowToWrist.y, elbowToWrist.x);
-
-            const rotElbow = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), elbowAngle);
-
-            const targetQuat = elbowState.initialQuat.clone().multiply(rotElbow);
-
-            elbowBone.quaternion.slerp(targetQuat, this.SMOOTHING);
+        elbowBone.getWorldPosition(elbowWorldPos);
+        const elbowChildWorldPos = new THREE.Vector3();
+        if (elbowBone.children[0]) {
+            (elbowBone.children[0] as THREE.Bone).getWorldPosition(elbowChildWorldPos);
+        } else {
+            elbowChildWorldPos.copy(elbowWorldPos).add(new THREE.Vector3(0, -0.1, 0));
         }
-    }
 
-    private detectBones(skeleton: THREE.Skeleton): DetectedBones {
-        console.log('📋 Bones:', skeleton.bones.map(b => `"${b.name}"`).join(', '));
+        const currentLowerDir = new THREE.Vector3().subVectors(elbowChildWorldPos, elbowWorldPos).normalize();
+        const targetLowerDir = new THREE.Vector3().subVectors(W, E).normalize();
 
-        const find = (patterns: string[]): THREE.Bone | undefined => {
-            for (const pattern of patterns) {
-                const bone = skeleton.bones.find(b => {
-                    const name = b.name.toLowerCase();
-                    const pat = pattern.toLowerCase();
-                    return name === pat || name.includes(pat);
-                });
-                if (bone) {
-                    console.log(`  ✅ "${pattern}" -> "${bone.name}"`);
-                    return bone;
-                }
-            }
-            return undefined;
-        };
+        const elbowParentWorldQuat = shoulderBone.getWorldQuaternion(new THREE.Quaternion());
 
-        return {
-            leftShoulder: find(['LeftShoulder', 'Left Shoulder', 'LeftArm', 'shoulder.l']),
-            leftElbow: find(['LeftElbow', 'Left Elbow', 'LeftForeArm', 'elbow.l']),
-            rightShoulder: find(['RightShoulder', 'Right Shoulder', 'RightArm', 'shoulder.r']),
-            rightElbow: find(['RightElbow', 'Right Elbow', 'RightForeArm', 'elbow.r']),
-        };
+        const lowerRotation = new THREE.Quaternion().setFromUnitVectors(currentLowerDir, targetLowerDir);
+        const newElbowWorldQuat = lowerRotation.multiply(elbowBone.getWorldQuaternion(new THREE.Quaternion()));
+        const newElbowLocalQuat = elbowParentWorldQuat.clone().invert().multiply(newElbowWorldQuat);
+        elbowBone.quaternion.copy(newElbowLocalQuat);
     }
 
     private findSkeleton(model: THREE.Object3D): THREE.Skeleton | null {
@@ -192,20 +167,14 @@ export class SkeletonRetargetService {
         model.traverse((child) => {
             if (skeleton) return;
             const mesh = child as THREE.SkinnedMesh;
-            if (mesh?.isSkinnedMesh && mesh.skeleton) {
-                skeleton = mesh.skeleton;
-            }
+            if (mesh?.isSkinnedMesh && mesh.skeleton) skeleton = mesh.skeleton;
         });
         return skeleton;
     }
 
     clearCache(modelId?: string): void {
-        if (modelId) {
-            this.boneCache.delete(modelId);
-            this.initialStates.delete(modelId);
-        } else {
-            this.boneCache.clear();
-            this.initialStates.clear();
-        }
+        if (modelId) this.bones.delete(modelId);
+        else this.bones.clear();
+        this.frameCount = 0;
     }
 }
