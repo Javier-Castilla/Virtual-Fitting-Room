@@ -119,6 +119,7 @@ export class GarmentManagerService {
         });
     }
 
+    // garment-manager.ts - Solo el método updateGarmentByCategory con Z-depth
     private updateGarmentByCategory(
         garmentId: string,
         entry: LoadedGarment,
@@ -131,16 +132,84 @@ export class GarmentManagerService {
         const hasLandmarks = config.anchorLandmarks.every(i => pose2d[i]);
         if (!hasLandmarks) return;
 
-        const anchorPos = this.calculateAnchorPosition(pose2d, config.anchorLandmarks);
-        const scale = this.calculateScaleFromShoulders(entry, pose2d, pose3d);
-        const rotations = this.calculateRotations(entry.category, pose2d, pose3d);
-
-        this.applyTransformations(entry, anchorPos, scale, rotations);
-
-        // ⭐ REACTIVAR skeleton retarget
         if (entry.hasSkeleton && pose3d) {
+            const leftShoulder2d = pose2d[11];
+            const rightShoulder2d = pose2d[12];
+            const shoulderWidth2d = Math.abs(rightShoulder2d.x - leftShoulder2d.x);
+
+            if (entry.referenceWidth === 0 || shoulderWidth2d > entry.referenceWidth) {
+                entry.referenceWidth = shoulderWidth2d;
+            }
+
+            const effectiveWidth = Math.max(shoulderWidth2d, entry.referenceWidth * 0.7);
+
+            const cam = this.threeService.camera;
+            const dist = Math.max(cam.position.z - this.zPlane, 0.25);
+            const vFov = THREE.MathUtils.degToRad(cam.fov);
+            const planeHeight = 2 * dist * Math.tan(vFov / 2);
+            const planeWidth = planeHeight * cam.aspect;
+            const userShoulderWidthInUnits = effectiveWidth * planeWidth;
+
+            const scale = THREE.MathUtils.clamp(
+                userShoulderWidthInUnits / entry.shoulderDistance,
+                0.1,
+                10
+            );
+
+            const targetScale = new THREE.Vector3(scale, scale, scale);
+            entry.root.scale.lerp(targetScale, this.smoothing);
+
+            const torsoCenter = {
+                x: (pose2d[11].x + pose2d[12].x) * 0.5,
+                y: (pose2d[11].y + pose2d[12].y + pose2d[23].y + pose2d[24].y) * 0.25
+            };
+
+            const shoulderZ = (pose3d[11].z + pose3d[12].z) * 0.5;
+            const targetZ = this.zPlane + shoulderZ * 2.5;
+
+            const x = (torsoCenter.x - 0.5) * planeWidth;
+            const y = (0.5 - torsoCenter.y) * planeHeight;
+            const targetPos = new THREE.Vector3(x, y, targetZ);
+            entry.root.position.lerp(targetPos, this.smoothing);
+
+            if (pose3d.length >= 25) {
+                const ls3d = pose3d[11];
+                const rs3d = pose3d[12];
+                const lh3d = pose3d[23];
+                const rh3d = pose3d[24];
+
+                if (ls3d && rs3d && lh3d && rh3d) {
+                    const shoulderVec = new THREE.Vector3(
+                        rs3d.x - ls3d.x,
+                        rs3d.y - ls3d.y,
+                        rs3d.z - ls3d.z
+                    ).normalize();
+
+                    const spineVec = new THREE.Vector3(
+                        (ls3d.x + rs3d.x) / 2 - (lh3d.x + rh3d.x) / 2,
+                        (ls3d.y + rs3d.y) / 2 - (lh3d.y + rh3d.y) / 2,
+                        (ls3d.z + rs3d.z) / 2 - (lh3d.z + rh3d.z) / 2
+                    ).normalize();
+
+                    const forward = new THREE.Vector3()
+                        .crossVectors(shoulderVec, spineVec)
+                        .normalize();
+
+                    const rotY = -Math.atan2(forward.x, forward.z);
+                    entry.root.rotation.y = THREE.MathUtils.lerp(entry.root.rotation.y, rotY, this.smoothing);
+                }
+            }
+
+            entry.root.rotation.x = THREE.MathUtils.lerp(entry.root.rotation.x, 0, this.smoothing);
+            entry.root.rotation.z = THREE.MathUtils.lerp(entry.root.rotation.z, 0, this.smoothing);
+
             const category = this.isUpperBody(entry.category) ? 'upper' : 'lower';
             this.skeletonRetarget.updateSkeleton(entry.root, pose3d, category, garmentId);
+        } else {
+            const anchorPos = this.calculateAnchorPosition(pose2d, config.anchorLandmarks);
+            const scale = this.calculateScaleFromShoulders(entry, pose2d, pose3d);
+            const rotations = this.calculateRotations(entry.category, pose2d, pose3d);
+            this.applyTransformations(entry, anchorPos, scale, rotations);
         }
     }
 

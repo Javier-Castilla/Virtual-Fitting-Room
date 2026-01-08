@@ -22,9 +22,14 @@ export class SkeletonRetargetService {
     private bones = new Map<string, CachedBones>();
     private frameCount = 0;
     private mirrored = true;
+    private smoothing = 0.3;
 
     setMirrored(value: boolean): void {
         this.mirrored = value;
+    }
+
+    setSmoothness(value: number): void {
+        this.smoothing = THREE.MathUtils.clamp(value, 0.1, 1.0);
     }
 
     updateSkeleton(
@@ -75,8 +80,7 @@ export class SkeletonRetargetService {
                 cached.leftElbowBindQuat,
                 worldLandmarks[11],
                 worldLandmarks[13],
-                worldLandmarks[15],
-                'left'
+                worldLandmarks[15]
             );
 
             this.animateArm(
@@ -86,8 +90,7 @@ export class SkeletonRetargetService {
                 cached.rightElbowBindQuat,
                 worldLandmarks[12],
                 worldLandmarks[14],
-                worldLandmarks[16],
-                'right'
+                worldLandmarks[16]
             );
         }
 
@@ -107,8 +110,7 @@ export class SkeletonRetargetService {
         elbowBindQuat: THREE.Quaternion | undefined,
         shoulderLM: Landmark3D,
         elbowLM: Landmark3D,
-        wristLM: Landmark3D,
-        side: 'left' | 'right'
+        wristLM: Landmark3D
     ): void {
         if (!shoulderBone || !elbowBone || !shoulderBindQuat || !elbowBindQuat) return;
 
@@ -116,50 +118,54 @@ export class SkeletonRetargetService {
         const E = this.toRig(elbowLM);
         const W = this.toRig(wristLM);
 
-        shoulderBone.quaternion.copy(shoulderBindQuat);
-        elbowBone.quaternion.copy(elbowBindQuat);
-
         shoulderBone.updateWorldMatrix(false, false);
         elbowBone.updateWorldMatrix(false, false);
 
         const shoulderWorldPos = new THREE.Vector3();
-        const elbowWorldPos = new THREE.Vector3();
         shoulderBone.getWorldPosition(shoulderWorldPos);
+
+        const elbowWorldPos = new THREE.Vector3();
         elbowBone.getWorldPosition(elbowWorldPos);
 
-        const currentUpperDir = new THREE.Vector3().subVectors(elbowWorldPos, shoulderWorldPos).normalize();
-        const targetUpperDir = new THREE.Vector3().subVectors(E, S).normalize();
+        const currentShoulderDir = new THREE.Vector3().subVectors(elbowWorldPos, shoulderWorldPos).normalize();
+        const targetShoulderDir = new THREE.Vector3().subVectors(E, S).normalize();
 
-        const parentWorldQuat = new THREE.Quaternion();
+        const shoulderParentQuat = new THREE.Quaternion();
         if (shoulderBone.parent) {
-            shoulderBone.parent.getWorldQuaternion(parentWorldQuat);
+            shoulderBone.parent.getWorldQuaternion(shoulderParentQuat);
         }
 
-        const upperRotation = new THREE.Quaternion().setFromUnitVectors(currentUpperDir, targetUpperDir);
-        const newShoulderWorldQuat = upperRotation.multiply(shoulderBone.getWorldQuaternion(new THREE.Quaternion()));
-        const newShoulderLocalQuat = parentWorldQuat.clone().invert().multiply(newShoulderWorldQuat);
-        shoulderBone.quaternion.copy(newShoulderLocalQuat);
+        const shoulderRotWorld = new THREE.Quaternion().setFromUnitVectors(currentShoulderDir, targetShoulderDir);
+        const shoulderCurrentWorldQuat = shoulderBone.getWorldQuaternion(new THREE.Quaternion());
+        const shoulderTargetWorldQuat = shoulderRotWorld.multiply(shoulderCurrentWorldQuat);
+        const shoulderTargetLocalQuat = shoulderParentQuat.clone().invert().multiply(shoulderTargetWorldQuat);
+
+        shoulderBone.quaternion.slerp(shoulderTargetLocalQuat, this.smoothing);
 
         shoulderBone.updateWorldMatrix(false, false);
         elbowBone.updateWorldMatrix(false, false);
 
         elbowBone.getWorldPosition(elbowWorldPos);
-        const elbowChildWorldPos = new THREE.Vector3();
+
+        const elbowChildPos = new THREE.Vector3();
         if (elbowBone.children[0]) {
-            (elbowBone.children[0] as THREE.Bone).getWorldPosition(elbowChildWorldPos);
+            (elbowBone.children[0] as THREE.Bone).getWorldPosition(elbowChildPos);
         } else {
-            elbowChildWorldPos.copy(elbowWorldPos).add(new THREE.Vector3(0, -0.1, 0));
+            elbowChildPos.copy(elbowWorldPos).add(new THREE.Vector3(0, -0.1, 0));
         }
 
-        const currentLowerDir = new THREE.Vector3().subVectors(elbowChildWorldPos, elbowWorldPos).normalize();
-        const targetLowerDir = new THREE.Vector3().subVectors(W, E).normalize();
+        const currentElbowDir = new THREE.Vector3().subVectors(elbowChildPos, elbowWorldPos).normalize();
+        const targetElbowDir = new THREE.Vector3().subVectors(W, E).normalize();
 
-        const elbowParentWorldQuat = shoulderBone.getWorldQuaternion(new THREE.Quaternion());
+        const elbowParentQuat = new THREE.Quaternion();
+        shoulderBone.getWorldQuaternion(elbowParentQuat);
 
-        const lowerRotation = new THREE.Quaternion().setFromUnitVectors(currentLowerDir, targetLowerDir);
-        const newElbowWorldQuat = lowerRotation.multiply(elbowBone.getWorldQuaternion(new THREE.Quaternion()));
-        const newElbowLocalQuat = elbowParentWorldQuat.clone().invert().multiply(newElbowWorldQuat);
-        elbowBone.quaternion.copy(newElbowLocalQuat);
+        const elbowRotWorld = new THREE.Quaternion().setFromUnitVectors(currentElbowDir, targetElbowDir);
+        const elbowCurrentWorldQuat = elbowBone.getWorldQuaternion(new THREE.Quaternion());
+        const elbowTargetWorldQuat = elbowRotWorld.multiply(elbowCurrentWorldQuat);
+        const elbowTargetLocalQuat = elbowParentQuat.clone().invert().multiply(elbowTargetWorldQuat);
+
+        elbowBone.quaternion.slerp(elbowTargetLocalQuat, this.smoothing);
     }
 
     private findSkeleton(model: THREE.Object3D): THREE.Skeleton | null {
