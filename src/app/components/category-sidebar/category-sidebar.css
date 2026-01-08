@@ -1,102 +1,113 @@
 .category-sidebar {
   position: fixed;
-  left: 20px;
-  top: 50%;
-  transform: translateY(-50%);
+  left: 0;
+  top: 60px;
+  bottom: 0;
+  width: 250px;
+  background: rgba(0, 0, 0, 0.85);
+  padding: 20px;
+  color: white;
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3);
+}
+
+.sidebar-title {
+  font-size: 1.5rem;
+  margin-bottom: 20px;
+  font-weight: 600;
+  color: #00d4ff;
+  text-align: center;
+}
+
+.category-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 15px;
-  z-index: 1000;
+  gap: 12px;
 }
 
-.category-btn {
-  position: relative;
-  background: rgba(255, 255, 255, 0.9);
-  border: 2px solid #ddd;
+.category-item {
   padding: 15px 20px;
-  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  color: #333;
   transition: all 0.3s ease;
-  min-width: 180px;
-  text-align: left;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  position: relative;
+  overflow: hidden;
+  border: 2px solid transparent;
 }
 
-.category-btn:hover {
-  background: rgba(255, 255, 255, 1);
-  border-color: #00d4ff;
+.category-item:hover {
+  background: rgba(255, 255, 255, 0.2);
   transform: translateX(5px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
-.category-btn.active {
+.category-item.selected {
   background: linear-gradient(135deg, #00d4ff 0%, #0099ff 100%);
   border-color: #0099ff;
-  color: white;
   box-shadow: 0 4px 15px rgba(0, 212, 255, 0.4);
 }
 
-.category-btn.pointing {
-  background: rgba(255, 255, 255, 1);
-  border-color: #00d4ff;
-  border-width: 3px;
-  transform: translateX(10px) scale(1.05);
-  box-shadow: 0 6px 20px rgba(0, 212, 255, 0.3);
+.category-item.pointing {
+  background: rgba(72, 187, 120, 0.4);
+  border: 2px solid #48bb78;
+  box-shadow: 0 0 15px rgba(72, 187, 120, 0.6);
   animation: pointingPulse 0.8s ease-in-out infinite;
 }
 
 @keyframes pointingPulse {
   0%, 100% {
-    box-shadow: 0 6px 20px rgba(0, 212, 255, 0.3);
+    box-shadow: 0 0 15px rgba(72, 187, 120, 0.6);
   }
   50% {
-    box-shadow: 0 6px 25px rgba(0, 212, 255, 0.6);
+    box-shadow: 0 0 25px rgba(72, 187, 120, 0.9);
   }
 }
 
 .category-label {
+  position: relative;
+  z-index: 2;
+  font-weight: 500;
+  font-size: 14px;
   display: block;
 }
 
-/* Indicador de progreso circular */
-.pointing-indicator {
+.pointing-progress {
   position: absolute;
-  right: -25px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 50px;
-  height: 50px;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  overflow: hidden;
 }
 
-.progress-ring {
-  transform: rotate(-90deg);
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #48bb78, #38a169);
+  transition: width 0.1s linear;
+  box-shadow: 0 0 10px rgba(72, 187, 120, 0.8);
 }
 
-.progress-ring-circle {
-  stroke-dasharray: 125.6;
-  stroke-dashoffset: 125.6;
-  transition: stroke-dashoffset 0.1s linear;
-  stroke-linecap: round;
-  filter: drop-shadow(0 0 5px rgba(0, 212, 255, 0.5));
+/* Scrollbar personalizado */
+.category-sidebar::-webkit-scrollbar {
+  width: 6px;
 }
 
-.progress-icon {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 24px;
-  animation: bounce 0.6s ease-in-out infinite;
+.category-sidebar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
 }
 
-@keyframes bounce {
-  0%, 100% {
-    transform: translate(-50%, -50%) scale(1);
-  }
-  50% {
-    transform: translate(-50%, -55%) scale(1.1);
-  }
+.category-sidebar::-webkit-scrollbar-thumb {
+  background: rgba(0, 212, 255, 0.5);
+  border-radius: 3px;
+}
+
+.category-sidebar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 212, 255, 0.8);
 }
