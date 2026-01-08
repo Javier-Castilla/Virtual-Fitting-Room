@@ -15,7 +15,8 @@ type LoadedGarment = {
     category: GarmentCategory;
     visible: boolean;
     hasSkeleton: boolean;
-    shoulderDistance: number; // ⭐ NUEVO: Distancia entre hombros del modelo
+    shoulderDistance: number;
+    hipDistance: number;
 };
 
 @Injectable({ providedIn: 'root' })
@@ -23,20 +24,15 @@ export class GarmentManagerService {
     private loaded: Map<string, LoadedGarment> = new Map();
     private smoothing = 0.3;
     private zPlane = 0;
-
-    private categoryConfig: Record<GarmentCategory, {
-        widthFactor: number;
-        anchorLandmarks: number[];
-        scaleLandmarks: number[];
-    }> = {
+    private categoryConfig: Record<GarmentCategory, { widthFactor: number; anchorLandmarks: number[]; scaleLandmarks: number[] }> = {
         [GarmentCategory.UPPER_BODY]: {
-            widthFactor: 1.0, // ⭐ Cambiado a 1.0 para escala exacta
-            anchorLandmarks: [11, 12], // ⭐ Solo hombros para UPPER_BODY
+            widthFactor: 1.0,
+            anchorLandmarks: [11, 12],
             scaleLandmarks: [11, 12]
         },
         [GarmentCategory.LOWER_BODY]: {
-            widthFactor: 1.2,
-            anchorLandmarks: [23, 24, 25, 26],
+            widthFactor: 2.0,
+            anchorLandmarks: [25, 26],
             scaleLandmarks: [23, 24]
         },
         [GarmentCategory.FOOTWEAR]: {
@@ -82,8 +78,8 @@ export class GarmentManagerService {
         const baseWidth = Math.max(size.x, 1e-6);
         const baseHeight = Math.max(size.y, 1e-6);
 
-        // ⭐ NUEVO: Calcular distancia entre hombros del modelo
-        const shoulderDistance = this.calculateModelShoulderDistance(inner);
+        const shoulderDistance = this.calculateBoneDistance(inner, 'shoulder');
+        const hipDistance = this.calculateBoneDistance(inner, 'hip');
 
         const hasSkeleton = this.detectSkeleton(inner);
 
@@ -96,22 +92,23 @@ export class GarmentManagerService {
             category: garment.category,
             visible: false,
             hasSkeleton,
-            shoulderDistance
+            shoulderDistance,
+            hipDistance
         });
 
         this.threeService.scene.add(root);
+
         console.log('✅ Garment loaded:', {
             id: garment.id,
             category: garment.category,
             hasSkeleton: hasSkeleton ? '🦴' : '❌',
-            baseWidth,
-            shoulderDistance: shoulderDistance.toFixed(3)
+            shoulderDistance: shoulderDistance.toFixed(3),
+            hipDistance: hipDistance.toFixed(3)
         });
     }
 
     updateGarments(poseLandmarks2d: any[], poseLandmarks3d?: any[]): void {
         if (!poseLandmarks2d || poseLandmarks2d.length < 33) return;
-
         this.loaded.forEach((entry, garmentId) => {
             if (entry.visible) {
                 this.updateGarmentByCategory(garmentId, entry, poseLandmarks2d, poseLandmarks3d);
@@ -119,7 +116,6 @@ export class GarmentManagerService {
         });
     }
 
-    // garment-manager.ts - Solo el método updateGarmentByCategory con Z-depth
     private updateGarmentByCategory(
         garmentId: string,
         entry: LoadedGarment,
@@ -132,7 +128,13 @@ export class GarmentManagerService {
         const hasLandmarks = config.anchorLandmarks.every(i => pose2d[i]);
         if (!hasLandmarks) return;
 
-        if (entry.hasSkeleton && pose3d) {
+        if (entry.hasSkeleton && pose3d && this.isUpperBody(entry.category)) {
+            const cam = this.threeService.camera;
+            const dist = Math.max(cam.position.z - this.zPlane, 0.25);
+            const vFov = THREE.MathUtils.degToRad(cam.fov);
+            const planeHeight = 2 * dist * Math.tan(vFov / 2);
+            const planeWidth = planeHeight * cam.aspect;
+
             const leftShoulder2d = pose2d[11];
             const rightShoulder2d = pose2d[12];
             const shoulderWidth2d = Math.abs(rightShoulder2d.x - leftShoulder2d.x);
@@ -142,12 +144,6 @@ export class GarmentManagerService {
             }
 
             const effectiveWidth = Math.max(shoulderWidth2d, entry.referenceWidth * 0.7);
-
-            const cam = this.threeService.camera;
-            const dist = Math.max(cam.position.z - this.zPlane, 0.25);
-            const vFov = THREE.MathUtils.degToRad(cam.fov);
-            const planeHeight = 2 * dist * Math.tan(vFov / 2);
-            const planeWidth = planeHeight * cam.aspect;
             const userShoulderWidthInUnits = effectiveWidth * planeWidth;
 
             const scale = THREE.MathUtils.clamp(
@@ -203,84 +199,100 @@ export class GarmentManagerService {
             entry.root.rotation.x = THREE.MathUtils.lerp(entry.root.rotation.x, 0, this.smoothing);
             entry.root.rotation.z = THREE.MathUtils.lerp(entry.root.rotation.z, 0, this.smoothing);
 
-            const category = this.isUpperBody(entry.category) ? 'upper' : 'lower';
+            const category = 'upper';
             this.skeletonRetarget.updateSkeleton(entry.root, pose3d, category, garmentId);
         } else {
             const anchorPos = this.calculateAnchorPosition(pose2d, config.anchorLandmarks);
-            const scale = this.calculateScaleFromShoulders(entry, pose2d, pose3d);
+            const scale = this.calculateScaleFromLandmarks(entry, pose2d, pose3d);
             const rotations = this.calculateRotations(entry.category, pose2d, pose3d);
             this.applyTransformations(entry, anchorPos, scale, rotations);
+
+            if (entry.hasSkeleton && pose3d) {
+                const category = this.isUpperBody(entry.category) ? 'upper' : 'lower';
+                this.skeletonRetarget.updateSkeleton(entry.root, pose3d, category, garmentId);
+            }
         }
     }
 
-    // ⭐ NUEVO: Calcular distancia entre hombros del modelo en bind pose
-    private calculateModelShoulderDistance(model: THREE.Object3D): number {
+    private calculateBoneDistance(model: THREE.Object3D, type: 'shoulder' | 'hip'): number {
         const skeleton = this.findSkeletonFromModel(model);
         if (!skeleton) {
-            console.warn('⚠️ No skeleton found, using bounding box width');
             const bbox = new THREE.Box3().setFromObject(model);
             return bbox.max.x - bbox.min.x;
         }
 
-        // Buscar huesos de hombros
-        const leftShoulder = skeleton.bones.find(b =>
-            b.name.toLowerCase().includes('leftshoulder') ||
-            b.name.toLowerCase().includes('left shoulder')
-        );
-        const rightShoulder = skeleton.bones.find(b =>
-            b.name.toLowerCase().includes('rightshoulder') ||
-            b.name.toLowerCase().includes('right shoulder')
-        );
+        let leftBone: THREE.Bone | undefined;
+        let rightBone: THREE.Bone | undefined;
 
-        if (leftShoulder && rightShoulder) {
+        if (type === 'shoulder') {
+            leftBone = skeleton.bones.find(b =>
+                b.name.toLowerCase().includes('leftshoulder') ||
+                b.name.toLowerCase().includes('left shoulder')
+            );
+            rightBone = skeleton.bones.find(b =>
+                b.name.toLowerCase().includes('rightshoulder') ||
+                b.name.toLowerCase().includes('right shoulder')
+            );
+        } else {
+            leftBone = skeleton.bones.find(b =>
+                b.name.toLowerCase().includes('lefthip') ||
+                b.name.toLowerCase().includes('left hip') ||
+                b.name.toLowerCase().includes('leftupleg')
+            );
+            rightBone = skeleton.bones.find(b =>
+                b.name.toLowerCase().includes('righthip') ||
+                b.name.toLowerCase().includes('right hip') ||
+                b.name.toLowerCase().includes('rightupleg')
+            );
+        }
+
+        if (leftBone && rightBone) {
             const leftPos = new THREE.Vector3();
             const rightPos = new THREE.Vector3();
-            leftShoulder.getWorldPosition(leftPos);
-            rightShoulder.getWorldPosition(rightPos);
-
+            leftBone.getWorldPosition(leftPos);
+            rightBone.getWorldPosition(rightPos);
             const distance = leftPos.distanceTo(rightPos);
-            console.log('📏 Shoulder bones distance:', distance);
+            console.log(`📏 ${type} bones distance:`, distance);
             return distance;
         }
 
-        // Fallback: usar bounding box
         const bbox = new THREE.Box3().setFromObject(model);
         return bbox.max.x - bbox.min.x;
     }
 
-    // ⭐ NUEVO: Calcular escala basada en distancia entre hombros
-    private calculateScaleFromShoulders(
+    private calculateScaleFromLandmarks(
         entry: LoadedGarment,
         pose2d: any[],
         pose3d?: any[]
     ): number {
-        // Calcular distancia 2D entre hombros del usuario
-        const leftShoulder2d = pose2d[11];
-        const rightShoulder2d = pose2d[12];
+        const config = this.categoryConfig[entry.category];
+        const scaleLandmarks = config.scaleLandmarks;
 
-        const shoulderWidth2d = Math.abs(rightShoulder2d.x - leftShoulder2d.x);
+        const leftLandmark = pose2d[scaleLandmarks[0]];
+        const rightLandmark = pose2d[scaleLandmarks[1]];
+        const width2d = Math.abs(rightLandmark.x - leftLandmark.x);
 
-        if (shoulderWidth2d < 0.02) return entry.root.scale.x;
+        if (width2d < 0.02) return entry.root.scale.x;
 
-        // Guardar referencia si es la primera vez o si es mayor
-        if (entry.referenceWidth === 0 || shoulderWidth2d > entry.referenceWidth) {
-            entry.referenceWidth = shoulderWidth2d;
+        if (entry.referenceWidth === 0 || width2d > entry.referenceWidth) {
+            entry.referenceWidth = width2d;
         }
 
-        const effectiveWidth = Math.max(shoulderWidth2d, entry.referenceWidth * 0.7);
+        const effectiveWidth = Math.max(width2d, entry.referenceWidth * 0.7);
 
-        // Convertir a unidades de pantalla
         const cam = this.threeService.camera;
         const dist = Math.max(cam.position.z - this.zPlane, 0.25);
         const vFov = THREE.MathUtils.degToRad(cam.fov);
         const planeHeight = 2 * dist * Math.tan(vFov / 2);
         const planeWidth = planeHeight * cam.aspect;
 
-        const userShoulderWidthInUnits = effectiveWidth * planeWidth;
+        const userWidthInUnits = effectiveWidth * planeWidth;
 
-        // ⭐ Escala = ancho de hombros del usuario / ancho de hombros del modelo
-        let scale = userShoulderWidthInUnits / entry.shoulderDistance;
+        const referenceDistance = this.isUpperBody(entry.category)
+            ? entry.shoulderDistance
+            : entry.hipDistance;
 
+        let scale = (userWidthInUnits / referenceDistance) * config.widthFactor;
         return THREE.MathUtils.clamp(scale, 0.1, 10);
     }
 
@@ -306,7 +318,6 @@ export class GarmentManagerService {
         if (category === GarmentCategory.UPPER_BODY || category === GarmentCategory.FULL_BODY) {
             const ls = pose2d[11];
             const rs = pose2d[12];
-
             if (ls && rs) {
                 const dx = rs.x - ls.x;
                 const dy = rs.y - ls.y;
@@ -316,7 +327,6 @@ export class GarmentManagerService {
         } else if (category === GarmentCategory.LOWER_BODY) {
             const lh = pose2d[23];
             const rh = pose2d[24];
-
             if (lh && rh) {
                 const dx = rh.x - lh.x;
                 const dy = rh.y - lh.y;
