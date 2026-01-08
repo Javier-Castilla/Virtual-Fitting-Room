@@ -6,16 +6,22 @@ import {
   ElementRef,
   Output,
   EventEmitter,
-  AfterViewInit
+  AfterViewInit,
+  HostListener,
+  ChangeDetectorRef,
+  NgZone
 } from '@angular/core';
-
+import { CommonModule } from '@angular/common';
 import { MediapipeService } from '../../services/mediapipe';
 import { GestureDetectorService, type GestureResult } from '../../services/gesture-detection';
 import type { HandGestureCategory } from '../../services/gesture-detection';
+import { Subscription } from 'rxjs';
+import {GestureState} from "../../services/gesture-detection/gesture-detector.service";
 
 @Component({
   selector: 'app-camera-feed',
   standalone: true,
+  imports: [CommonModule],
   templateUrl: './camera-feed.html',
   styleUrls: ['./camera-feed.css']
 })
@@ -24,28 +30,58 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('canvasElement') canvasElement!: ElementRef<HTMLCanvasElement>;
 
   @Output() gestureDetected = new EventEmitter<GestureResult>();
-  @Output() gestureStateChanged = new EventEmitter<string>();
 
   poseFrames = 0;
   lastPoseLen = 0;
   handsCount = 0;
+  debugMode = true;
+  lastGesture = 'None';
+  gestureState: GestureState = { isPeace: false, isPointing: false, handPosition: null };
 
   private animationId?: number;
   private stream?: MediaStream;
+  private gestureStateSub?: Subscription;
+  private updateDebugInterval?: any;
 
   constructor(
       private mediapipeService: MediapipeService,
-      private gestureDetector: GestureDetectorService
+      private gestureDetector: GestureDetectorService,
+      private cdr: ChangeDetectorRef,
+      private ngZone: NgZone
   ) {}
+
+  @HostListener('window:keydown', ['$event'])
+  handleKeyDown(event: KeyboardEvent): void {
+    if (event.key.toLowerCase() === 'l') {
+      this.debugMode = !this.debugMode;
+      this.cdr.detectChanges();
+    }
+  }
 
   async ngOnInit(): Promise<void> {
     await this.mediapipeService.initialize();
-    this.gestureDetector.gestureDetected$.subscribe((result: GestureResult) => this.gestureDetected.emit(result));
+
+    this.gestureDetector.gestureDetected$.subscribe((result: GestureResult) => {
+      this.lastGesture = result.type;
+      this.gestureDetected.emit(result);
+    });
+
+    this.gestureStateSub = this.gestureDetector.gestureState$.subscribe(state => {
+      this.gestureState = state;
+    });
+
+    this.updateDebugInterval = setInterval(() => {
+      if (this.debugMode) {
+        this.cdr.detectChanges();
+      }
+    }, 100);
   }
 
   async ngAfterViewInit(): Promise<void> {
     await this.startCamera();
-    this.processFrame();
+    this.ngZone.runOutsideAngular(() => {
+      this.processFrame();
+    });
   }
 
   private async startCamera(): Promise<void> {
@@ -86,12 +122,19 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
 
       if (handsLandmarks.length > 0) {
         this.gestureDetector.detectGesture(handsLandmarks, gestures);
-        this.gestureStateChanged.emit(this.gestureDetector.getCurrentState());
       } else {
         this.gestureDetector.detectGesture([]);
       }
 
-      this.drawOverlay(handsLandmarks, pose.poseLandmarks);
+      if (this.debugMode) {
+        this.drawOverlay(handsLandmarks, pose.poseLandmarks);
+      } else {
+        const canvas = this.canvasElement.nativeElement;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }
     }
 
     this.animationId = requestAnimationFrame(this.processFrame);
@@ -107,7 +150,6 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
     canvas.height = video.videoHeight;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
     ctx.save();
 
     if (poseLandmarks) this.drawPose(ctx, canvas.width, canvas.height, poseLandmarks);
@@ -164,6 +206,8 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     if (this.animationId) cancelAnimationFrame(this.animationId);
+    if (this.updateDebugInterval) clearInterval(this.updateDebugInterval);
+    this.gestureStateSub?.unsubscribe();
     this.stream?.getTracks().forEach((t) => t.stop());
   }
 }

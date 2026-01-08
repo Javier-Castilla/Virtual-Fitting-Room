@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Subject } from 'rxjs';
+import { Subject, BehaviorSubject } from 'rxjs';
 import { NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { FingerDetector } from './models/finger-detector';
 import type {
@@ -18,26 +18,46 @@ import { CooldownManager } from './models/cooldown-manager';
 export { GestureType };
 export type { GestureResult };
 
+export interface GestureState {
+    isPeace: boolean;
+    isPointing: boolean;
+    handPosition: { x: number; y: number } | null;
+}
+
 @Injectable({
     providedIn: 'root'
 })
 export class GestureDetectorService {
     public gestureDetected$ = new Subject<GestureResult>();
+    public gestureState$ = new BehaviorSubject<GestureState>({
+        isPeace: false,
+        isPointing: false,
+        handPosition: null
+    });
 
     private fingerDetector = new FingerDetector();
     private swipeRecognizer = new SwipeGestureRecognizer();
+    private pointingRecognizer = new PointingGestureRecognizer();
+    private peaceRecognizer = new PeaceGestureRecognizer();
 
     private staticRecognizers: GestureRecognizer[] = [
-        new PointingGestureRecognizer(),
-        new PeaceGestureRecognizer()
+        this.pointingRecognizer,
+        this.peaceRecognizer
     ];
 
     private swipeCooldown = new CooldownManager(800);
     private staticCooldown = new CooldownManager(1500);
 
+    private currentState: GestureState = {
+        isPeace: false,
+        isPointing: false,
+        handPosition: null
+    };
+
     detectGesture(landmarks: NormalizedLandmark[][], gestures?: Array<HandGestureCategory | null>): void {
         if (!landmarks || landmarks.length === 0) {
             this.resetAllRecognizers();
+            this.updateState(false, false, null);
             return;
         }
 
@@ -48,6 +68,13 @@ export class GestureDetectorService {
 
     private processHand(handLandmarks: NormalizedLandmark[], handIndex: number, handGesture: HandGestureCategory | null): void {
         const fingers = this.fingerDetector.detect(handLandmarks);
+
+        const handPosition = handLandmarks[8] ? { x: handLandmarks[8].x, y: handLandmarks[8].y } : null;
+
+        const peaceResult = this.peaceRecognizer.recognize(handLandmarks, fingers, handIndex, handGesture);
+        const pointingResult = this.pointingRecognizer.recognize(handLandmarks, fingers, handIndex, handGesture);
+
+        this.updateState(!!peaceResult, !!pointingResult, pointingResult ? handPosition : null);
 
         const swipeResult = this.swipeRecognizer.recognize(handLandmarks, fingers, handIndex, handGesture);
         if (swipeResult && this.swipeCooldown.canTrigger()) {
@@ -70,12 +97,23 @@ export class GestureDetectorService {
         }
     }
 
+    private updateState(isPeace: boolean, isPointing: boolean, handPosition: { x: number; y: number } | null): void {
+        const changed = this.currentState.isPeace !== isPeace ||
+            this.currentState.isPointing !== isPointing ||
+            JSON.stringify(this.currentState.handPosition) !== JSON.stringify(handPosition);
+
+        if (changed) {
+            this.currentState = { isPeace, isPointing, handPosition };
+            this.gestureState$.next(this.currentState);
+        }
+    }
+
     private resetAllRecognizers(): void {
         this.swipeRecognizer.reset(0);
         this.staticRecognizers.forEach(recognizer => recognizer.reset(0));
     }
 
-    getCurrentState(): string {
-        return 'IDLE';
+    getCurrentState(): GestureState {
+        return this.currentState;
     }
 }

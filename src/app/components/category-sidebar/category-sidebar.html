@@ -1,0 +1,22 @@
+<div class="category-sidebar">
+    <h2 class="sidebar-title">Categorías</h2>
+    <ul class="category-list">
+        @for (category of categories; track category) {
+            <li
+                    class="category-item"
+                    [attr.data-category]="category"
+                    [class.selected]="isSelected(category)"
+                    [class.pointing]="isPointing(category)"
+                    (click)="onCategoryClick(category)">
+
+                <span class="category-label">{{ category }}</span>
+
+                @if (isPointing(category)) {
+                    <div class="pointing-progress">
+                        <div class="progress-bar" [style.width.%]="pointingProgress"></div>
+                    </div>
+                }
+            </li>
+        }
+    </ul>
+</div>

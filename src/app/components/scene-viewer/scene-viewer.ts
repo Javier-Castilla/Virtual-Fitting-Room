@@ -1,14 +1,11 @@
-import { Component, AfterViewInit, OnDestroy, ElementRef, ViewChild, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { Component, AfterViewInit, OnDestroy, ElementRef, ViewChild, ChangeDetectionStrategy, ChangeDetectorRef, Input, SimpleChanges, OnChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Subscription } from 'rxjs';
 import { ThreejsService } from '../../services/threejs';
 import { GarmentManagerService } from '../../services/garment-manager';
 import { MediapipeService } from '../../services/mediapipe';
-import { type GestureResult, GestureType } from '../../services/gesture-detection';
 import { Garment } from '../../../domain/model/garment';
-import { GarmentType } from '../../../domain/enums/garment-type.enum';
 import { GarmentCategory } from '../../../domain/enums/garment-category.enum';
-import { GarmentSize } from '../../../domain/enums/garment-size.enum';
 
 @Component({
   selector: 'app-scene-viewer',
@@ -18,8 +15,10 @@ import { GarmentSize } from '../../../domain/enums/garment-size.enum';
   styleUrls: ['./scene-viewer.css'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class SceneViewerComponent implements AfterViewInit, OnDestroy {
+export class SceneViewerComponent implements AfterViewInit, OnDestroy, OnChanges {
   @ViewChild('rendererCanvas', { static: false }) rendererCanvas!: ElementRef<HTMLCanvasElement>;
+
+  @Input() selectedGarments: Map<GarmentCategory, Garment | null> = new Map();
 
   modelStatus: 'INIT' | 'LOADING' | 'LOADED' | 'ERROR' = 'INIT';
   poseFrames = 0;
@@ -31,61 +30,9 @@ export class SceneViewerComponent implements AfterViewInit, OnDestroy {
   private resizeHandler = () => this.onResize();
   private latestWorld: any[] | null = null;
   private latestPose2d: any[] | null = null;
-
-  private garmentCatalog: Garment[] = [
-    {
-      id: 'upper-jacket-1',
-      name: 'Chaqueta Azul',
-      modelPath: '/models/vestidoBlusaConEsqueleto.glb',
-      type: GarmentType.JACKET,
-      category: GarmentCategory.UPPER_BODY,
-      color: 'BLUE',
-      size: GarmentSize.M
-    },
-    {
-      id: 'upper-blazer-1',
-      name: 'Blazer',
-      modelPath: '/models/blazer.glb',
-      type: GarmentType.JACKET,
-      category: GarmentCategory.UPPER_BODY,
-      color: 'BLUE',
-      size: GarmentSize.M
-    },
-    {
-      id: 'upper-dress-1',
-      name: 'Vestido',
-      modelPath: '/models/dress.glb',
-      type: GarmentType.DRESS,
-      category: GarmentCategory.UPPER_BODY,
-      color: 'BLUE',
-      size: GarmentSize.M
-    },
-    {
-      id: 'upper-dress-high-1',
-      name: 'Vestido Alto',
-      modelPath: '/models/dress_high.glb',
-      type: GarmentType.DRESS,
-      category: GarmentCategory.UPPER_BODY,
-      color: 'BLUE',
-      size: GarmentSize.M
-    },
-    {
-      id: 'lower-pants-1',
-      name: 'Pantalones Negros',
-      modelPath: '/models/pants.glb',
-      type: GarmentType.PANTS,
-      category: GarmentCategory.LOWER_BODY,
-      color: 'BLACK',
-      size: GarmentSize.M
-    }
-  ];
-
-  private currentCategory: GarmentCategory = GarmentCategory.UPPER_BODY;
-  private categoryIndices = new Map<GarmentCategory, number>([
-    [GarmentCategory.UPPER_BODY, 0],
-    [GarmentCategory.LOWER_BODY, 0],
-    [GarmentCategory.FOOTWEAR, 0]
-  ]);
+  private currentLoadedGarments = new Set<string>();
+  private isLoadingGarments = false;
+  private lastPoseState = false;
 
   constructor(
       private threeService: ThreejsService,
@@ -97,67 +44,16 @@ export class SceneViewerComponent implements AfterViewInit, OnDestroy {
   async ngAfterViewInit(): Promise<void> {
     setTimeout(async () => {
       await this.initializeScene();
-      await this.loadGarments();
       this.subscribeToLandmarks();
       this.startAnimationLoop();
       this.cdr.detectChanges();
     }, 0);
   }
 
-  public onGestureDetected(gesture: GestureResult): void {
-    switch (gesture.type) {
-      case GestureType.SWIPE_RIGHT:
-        this.nextGarment();
-        break;
-      case GestureType.SWIPE_LEFT:
-        this.previousGarment();
-        break;
-      case GestureType.PEACE:
-        this.changeCategory();
-        break;
-      case GestureType.POINTING:
-        break;
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['selectedGarments'] && !changes['selectedGarments'].firstChange) {
+      this.updateVisibleGarments();
     }
-  }
-
-  public nextGarment(): void {
-    const garmentsInCategory = this.getGarmentsInCategory(this.currentCategory);
-    if (garmentsInCategory.length === 0) return;
-
-    const currentIndex = this.categoryIndices.get(this.currentCategory) || 0;
-    const nextIndex = (currentIndex + 1) % garmentsInCategory.length;
-    this.categoryIndices.set(this.currentCategory, nextIndex);
-
-    this.showCurrentGarments();
-    console.log('➡️ Next garment:', garmentsInCategory[nextIndex].name);
-  }
-
-  public previousGarment(): void {
-    const garmentsInCategory = this.getGarmentsInCategory(this.currentCategory);
-    if (garmentsInCategory.length === 0) return;
-
-    const currentIndex = this.categoryIndices.get(this.currentCategory) || 0;
-    let prevIndex = currentIndex - 1;
-    if (prevIndex < 0) prevIndex = garmentsInCategory.length - 1;
-
-    this.categoryIndices.set(this.currentCategory, prevIndex);
-
-    this.showCurrentGarments();
-    console.log('⬅️ Previous garment:', garmentsInCategory[prevIndex].name);
-  }
-
-  private changeCategory(): void {
-    const categories = [
-      GarmentCategory.UPPER_BODY,
-      GarmentCategory.LOWER_BODY,
-      GarmentCategory.FOOTWEAR
-    ];
-
-    const currentIdx = categories.indexOf(this.currentCategory);
-    const nextIdx = (currentIdx + 1) % categories.length;
-    this.currentCategory = categories[nextIdx];
-
-    console.log('🔄 Changed to category:', this.currentCategory);
   }
 
   private async initializeScene(): Promise<void> {
@@ -166,22 +62,37 @@ export class SceneViewerComponent implements AfterViewInit, OnDestroy {
     window.addEventListener('resize', this.resizeHandler);
   }
 
-  private async loadGarments(): Promise<void> {
-    try {
-      this.modelStatus = 'LOADING';
-      this.cdr.detectChanges();
+  private async updateVisibleGarments(): Promise<void> {
+    if (this.isLoadingGarments) return;
+    this.isLoadingGarments = true;
 
-      for (const garment of this.garmentCatalog) {
-        await this.garmentManager.loadGarment(garment);
+    try {
+      const newGarments = new Set<string>();
+
+      for (const [category, garment] of this.selectedGarments.entries()) {
+        if (garment) {
+          newGarments.add(garment.id);
+        }
       }
 
-      this.modelStatus = 'LOADED';
-      this.showCurrentGarments();
-      this.cdr.detectChanges();
-    } catch (error) {
-      this.modelStatus = 'ERROR';
-      console.error('Error loading garments:', error);
-      this.cdr.detectChanges();
+      const toRemove = Array.from(this.currentLoadedGarments).filter(id => !newGarments.has(id));
+      for (const id of toRemove) {
+        this.garmentManager.removeGarment(id);
+      }
+
+      for (const [category, garment] of this.selectedGarments.entries()) {
+        if (garment) {
+          const garmentId = garment.id;
+
+          if (!this.garmentManager['loaded'].has(garmentId)) {
+            await this.garmentManager.loadGarment(garment);
+          }
+        }
+      }
+
+      this.currentLoadedGarments = newGarments;
+    } finally {
+      this.isLoadingGarments = false;
     }
   }
 
@@ -200,8 +111,18 @@ export class SceneViewerComponent implements AfterViewInit, OnDestroy {
     const animate = (): void => {
       this.animationId = requestAnimationFrame(animate);
 
-      if (this.latestPose2d && this.latestWorld) {
-        this.garmentManager.updateGarments(this.latestPose2d, this.latestWorld);
+      const hasPose = !!(this.latestWorld && this.latestWorld.length >= 33 && this.latestPose2d && this.latestPose2d.length >= 33);
+
+      if (hasPose !== this.lastPoseState) {
+        if (!hasPose) {
+          this.forceHideAllGarments();
+        }
+        this.lastPoseState = hasPose;
+      }
+
+      if (hasPose) {
+        this.garmentManager.updateGarments(this.latestPose2d!, this.latestWorld!);
+        this.ensureGarmentsVisible();
       }
 
       this.renderFrames++;
@@ -210,21 +131,38 @@ export class SceneViewerComponent implements AfterViewInit, OnDestroy {
     animate();
   }
 
-  private getGarmentsInCategory(category: GarmentCategory): Garment[] {
-    return this.garmentCatalog.filter(g => g.category === category);
+  private ensureGarmentsVisible(): void {
+    for (const id of this.currentLoadedGarments) {
+      const entry = this.garmentManager['loaded'].get(id);
+      if (entry && !entry.root.visible) {
+        entry.visible = true;
+        entry.root.visible = true;
+      }
+    }
   }
 
-  private showCurrentGarments(): void {
-    this.garmentCatalog.forEach(g => this.garmentManager.hideGarment(g.id));
+  private forceHideAllGarments(): void {
+    const scene = this.threeService.scene;
 
-    [GarmentCategory.UPPER_BODY, GarmentCategory.LOWER_BODY, GarmentCategory.FOOTWEAR].forEach(cat => {
-      const garments = this.getGarmentsInCategory(cat);
-      if (garments.length > 0) {
-        const idx = this.categoryIndices.get(cat) || 0;
-        const selectedGarment = garments[idx];
-        this.garmentManager.showGarment(selectedGarment.id);
+    scene.children.forEach(child => {
+      if (child.name.includes('__root')) {
+        child.visible = false;
+        child.traverse((obj) => {
+          obj.visible = false;
+        });
       }
     });
+
+    for (const id of this.currentLoadedGarments) {
+      const entry = this.garmentManager['loaded'].get(id);
+      if (entry) {
+        entry.visible = false;
+        entry.root.visible = false;
+        entry.root.traverse((obj) => {
+          obj.visible = false;
+        });
+      }
+    }
   }
 
   private onResize(): void {
@@ -244,5 +182,9 @@ export class SceneViewerComponent implements AfterViewInit, OnDestroy {
     this.poseSub?.unsubscribe();
     this.worldSub?.unsubscribe();
     window.removeEventListener('resize', this.resizeHandler);
+
+    for (const id of this.currentLoadedGarments) {
+      this.garmentManager.removeGarment(id);
+    }
   }
 }

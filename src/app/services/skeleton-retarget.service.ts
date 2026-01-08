@@ -56,21 +56,23 @@ export class SkeletonRetargetService {
         model.updateMatrixWorld(true);
 
         if (!this.bones.has(modelId)) {
-            const leftShoulder = skeleton.bones.find(b => b.name === 'LeftShoulder');
-            const leftElbow = skeleton.bones.find(b => b.name === 'LeftElbow');
-            const leftWrist = skeleton.bones.find(b => b.name === 'LeftWrist');
+            // Búsqueda de huesos superiores
+            const leftShoulder = this.findBone(skeleton, ['LeftShoulder', 'leftshoulder', 'shoulder_l', 'l_shoulder']);
+            const leftElbow = this.findBone(skeleton, ['LeftElbow', 'leftelbow', 'elbow_l', 'l_elbow', 'leftforearm']);
+            const leftWrist = this.findBone(skeleton, ['LeftWrist', 'leftwrist', 'wrist_l', 'l_wrist', 'lefthand']);
 
-            const rightShoulder = skeleton.bones.find(b => b.name === 'RightShoulder');
-            const rightElbow = skeleton.bones.find(b => b.name === 'RightElbow');
-            const rightWrist = skeleton.bones.find(b => b.name === 'RightWrist');
+            const rightShoulder = this.findBone(skeleton, ['RightShoulder', 'rightshoulder', 'shoulder_r', 'r_shoulder']);
+            const rightElbow = this.findBone(skeleton, ['RightElbow', 'rightelbow', 'elbow_r', 'r_elbow', 'rightforearm']);
+            const rightWrist = this.findBone(skeleton, ['RightWrist', 'rightwrist', 'wrist_r', 'r_wrist', 'righthand']);
 
-            const leftHip = skeleton.bones.find(b => b.name === 'LeftHip' || b.name === 'LeftUpLeg');
-            const leftKnee = skeleton.bones.find(b => b.name === 'LeftKnee' || b.name === 'LeftLeg');
-            const leftAnkle = skeleton.bones.find(b => b.name === 'LeftAnkle' || b.name === 'LeftFoot');
+            // ✅ Búsqueda de huesos inferiores con el typo "LightKnee"
+            const leftHip = this.findBone(skeleton, ['LeftHip', 'lefthip', 'leftupleg', 'hip_l', 'l_hip', 'l_upleg', 'thigh_l']);
+            const leftKnee = this.findBone(skeleton, ['LightKnee', 'LeftKnee', 'leftknee', 'leftleg', 'knee_l', 'l_knee', 'l_leg', 'shin_l', 'calf_l']);
+            const leftAnkle = this.findBone(skeleton, ['LeftAnkle', 'leftankle', 'leftfoot', 'ankle_l', 'l_ankle', 'l_foot', 'foot_l']);
 
-            const rightHip = skeleton.bones.find(b => b.name === 'RightHip' || b.name === 'RightUpLeg');
-            const rightKnee = skeleton.bones.find(b => b.name === 'RightKnee' || b.name === 'RightLeg');
-            const rightAnkle = skeleton.bones.find(b => b.name === 'RightAnkle' || b.name === 'RightFoot');
+            const rightHip = this.findBone(skeleton, ['RightHip', 'righthip', 'rightupleg', 'hip_r', 'r_hip', 'r_upleg', 'thigh_r']);
+            const rightKnee = this.findBone(skeleton, ['RightKnee', 'rightknee', 'rightleg', 'knee_r', 'r_knee', 'r_leg', 'shin_r', 'calf_r']);
+            const rightAnkle = this.findBone(skeleton, ['RightAnkle', 'rightankle', 'rightfoot', 'ankle_r', 'r_ankle', 'r_foot', 'foot_r']);
 
             this.bones.set(modelId, {
                 skeleton,
@@ -96,18 +98,20 @@ export class SkeletonRetargetService {
                 rightKneeBindQuat: rightKnee?.quaternion.clone()
             });
 
-            console.log('✅ Bones initialized:', {
+            console.log('✅ Bones initialized for', modelId, {
                 upper: {
-                    leftShoulder: leftShoulder?.name,
-                    leftElbow: leftElbow?.name,
-                    rightShoulder: rightShoulder?.name,
-                    rightElbow: rightElbow?.name
+                    leftShoulder: leftShoulder?.name || '❌',
+                    leftElbow: leftElbow?.name || '❌',
+                    rightShoulder: rightShoulder?.name || '❌',
+                    rightElbow: rightElbow?.name || '❌'
                 },
                 lower: {
-                    leftHip: leftHip?.name,
-                    leftKnee: leftKnee?.name,
-                    rightHip: rightHip?.name,
-                    rightKnee: rightKnee?.name
+                    leftHip: leftHip?.name || '❌',
+                    leftKnee: leftKnee?.name || '❌',
+                    leftAnkle: leftAnkle?.name || '❌',
+                    rightHip: rightHip?.name || '❌',
+                    rightKnee: rightKnee?.name || '❌',
+                    rightAnkle: rightAnkle?.name || '❌'
                 }
             });
         }
@@ -161,6 +165,25 @@ export class SkeletonRetargetService {
         this.frameCount++;
     }
 
+    // ✅ Búsqueda exacta primero, luego case-insensitive
+    private findBone(skeleton: THREE.Skeleton, patterns: string[]): THREE.Bone | undefined {
+        // Primero intenta búsqueda exacta
+        for (const pattern of patterns) {
+            const bone = skeleton.bones.find(b => b.name === pattern);
+            if (bone) return bone;
+        }
+
+        // Luego case-insensitive sin espacios/guiones
+        for (const pattern of patterns) {
+            const bone = skeleton.bones.find(b =>
+                b.name.toLowerCase().replace(/[\s_-]/g, '') === pattern.toLowerCase().replace(/[\s_-]/g, '')
+            );
+            if (bone) return bone;
+        }
+
+        return undefined;
+    }
+
     private toRig(lm: Landmark3D): THREE.Vector3 {
         const sx = this.mirrored ? 1 : -1;
         return new THREE.Vector3(sx * lm.x, -lm.y, -lm.z);
@@ -207,7 +230,6 @@ export class SkeletonRetargetService {
 
         upperBone.updateWorldMatrix(false, false);
         lowerBone.updateWorldMatrix(false, false);
-
         lowerBone.getWorldPosition(midWorldPos);
 
         const lowerChildPos = new THREE.Vector3();
@@ -233,11 +255,13 @@ export class SkeletonRetargetService {
 
     private findSkeleton(model: THREE.Object3D): THREE.Skeleton | null {
         let skeleton: THREE.Skeleton | null = null;
+
         model.traverse((child) => {
             if (skeleton) return;
             const mesh = child as THREE.SkinnedMesh;
             if (mesh?.isSkinnedMesh && mesh.skeleton) skeleton = mesh.skeleton;
         });
+
         return skeleton;
     }
 

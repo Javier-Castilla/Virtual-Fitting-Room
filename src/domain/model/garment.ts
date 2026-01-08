@@ -7,25 +7,22 @@ export class Garment {
     name: string;
     type: GarmentType;
     category: GarmentCategory;
-    size: GarmentSize;
-    color: string;
     modelPath: string;
+    imagePath: string;
 
     constructor(
         id: string,
         name: string,
         type: GarmentType,
         category: GarmentCategory,
-        size: GarmentSize,
-        color: string,
-        modelPath: string
+        modelPath: string,
+        imagePath: string,
     ) {
         this.id = id;
         this.name = name;
         this.type = type;
         this.category = category;
-        this.size = size;
-        this.color = color;
         this.modelPath = modelPath;
+        this.imagePath = imagePath;
     }
 }

@@ -1,0 +1,15 @@
+{
+  "LOWER_BODY": {
+    "PANTS": [
+      "new_pants",
+      "pants"
+    ]
+  },
+  "UPPER_BODY": {
+    "JACKET": [
+      "blazer",
+      "dress",
+      "shirt"
+    ]
+  }
+}

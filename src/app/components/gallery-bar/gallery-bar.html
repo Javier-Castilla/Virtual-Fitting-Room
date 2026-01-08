@@ -1,0 +1,20 @@
+<div class="gallery-bar">
+    @if (isLoading) {
+        <div class="loading-state">
+            <p>Cargando catálogo...</p>
+        </div>
+    } @else {
+        <div class="gallery-scroll" #galleryScroll>
+            @for (item of filteredItems; track item.id; let i = $index) {
+                <div
+                        class="gallery-item"
+                        [class.center]="isItemInCenter(i)"
+                        [class.selected]="selectedItemId === item.id"
+                        [attr.data-position]="getItemClass(i)"
+                        (click)="onItemClick(item)">
+                    <img [src]="item.imagePath" [alt]="item.name">
+                </div>
+            }
+        </div>
+    }
+</div>

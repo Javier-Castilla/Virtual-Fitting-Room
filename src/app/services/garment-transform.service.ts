@@ -25,20 +25,10 @@ export class GarmentTransformService {
             scaleIndices: [23, 24],
             scaleMultiplier: 1.8
         },
-        [GarmentCategory.FOOTWEAR]: {
-            anchorIndices: [29, 30],
-            scaleIndices: [27, 28],
-            scaleMultiplier: 2.0
-        },
         [GarmentCategory.FULL_BODY]: {
             anchorIndices: [11, 12],
             scaleIndices: [11, 12],
             scaleMultiplier: 2.5
-        },
-        [GarmentCategory.ACCESSORY]: {
-            anchorIndices: [0],
-            scaleIndices: [11, 12],
-            scaleMultiplier: 2.2
         }
     };
 
