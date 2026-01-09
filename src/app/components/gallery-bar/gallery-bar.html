@@ -1,20 +1,27 @@
-<div class="gallery-bar">
-    @if (isLoading) {
-        <div class="loading-state">
-            <p>Cargando catálogo...</p>
+<div class="gallery-container">
+    <div *ngIf="isLoading" class="loading-indicator">
+        <p>Cargando prendas...</p>
+    </div>
+
+    <div *ngIf="!isLoading" class="gallery-scroll" #galleryScroll>
+        <div class="gallery-items">
+            <div *ngFor="let item of filteredItems; let i = index"
+                 class="gallery-item"
+                 [class]="getItemClass(i)"
+                 [class.selected]="isItemSelected(item)"
+                 [class.no-garment]="item === null"
+                 (click)="onItemClick(item, $event)">
+
+                <ng-container *ngIf="item === null">
+                    <div class="no-garment-icon">✖</div>
+                    <div class="item-name">Sin prenda</div>
+                </ng-container>
+
+                <ng-container *ngIf="item !== null">
+                    <img [src]="item.imagePath" [alt]="item.name" />
+                    <div class="item-name">{{ item.name }}</div>
+                </ng-container>
+            </div>
         </div>
-    } @else {
-        <div class="gallery-scroll" #galleryScroll>
-            @for (item of filteredItems; track item.id; let i = $index) {
-                <div
-                        class="gallery-item"
-                        [class.center]="isItemInCenter(i)"
-                        [class.selected]="selectedItemId === item.id"
-                        [attr.data-position]="getItemClass(i)"
-                        (click)="onItemClick(item)">
-                    <img [src]="item.imagePath" [alt]="item.name">
-                </div>
-            }
-        </div>
-    }
+    </div>
 </div>

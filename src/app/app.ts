@@ -35,6 +35,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild(SceneViewerComponent) sceneViewer!: SceneViewerComponent;
 
   selectedCategory: GarmentCategory = GarmentCategory.UPPER_BODY;
+
   selectedGarments: Map<GarmentCategory, Garment | null> = new Map([
     [GarmentCategory.UPPER_BODY, null],
     [GarmentCategory.LOWER_BODY, null],
@@ -145,6 +146,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   private saveOutfit(): void {
     this.resetPeaceGesture();
     this.showSavePopup = true;
+
     setTimeout(() => {
       this.showSavePopup = false;
       this.cdr.detectChanges();
@@ -247,8 +249,13 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     this.selectedCategory = category;
   }
 
-  onGarmentSelected(garment: Garment): void {
-    this.selectedGarments.set(garment.category, garment);
+  onGarmentSelected(garment: Garment | null): void {
+    if (garment === null) {
+      this.selectedGarments.set(this.selectedCategory, null);
+    } else {
+      this.selectedGarments.set(garment.category, garment);
+    }
+
     this.selectedGarments = new Map(this.selectedGarments);
   }
 

@@ -13,14 +13,14 @@ import { GarmentCatalogService} from "../../services/garments-catalog.service";
 })
 export class GalleryBarComponent implements OnInit, AfterViewInit, OnDestroy, OnChanges {
   @Input() selectedCategory: GarmentCategory = GarmentCategory.UPPER_BODY;
-  @Output() itemSelected = new EventEmitter<Garment>();
-
+  @Output() itemSelected = new EventEmitter<Garment | null>();
   @ViewChild('galleryScroll') galleryScroll!: ElementRef;
 
   selectedItemId: string | null = null;
   centerItemIndex: number = 0;
   isLoading = true;
 
+  private categoryStates: Map<GarmentCategory, { index: number, itemId: string | null }> = new Map();
   private isDragging = false;
   private startX = 0;
   private scrollLeft = 0;
@@ -31,25 +31,41 @@ export class GalleryBarComponent implements OnInit, AfterViewInit, OnDestroy, On
   async ngOnInit(): Promise<void> {
     await this.garmentCatalogService.initialize();
     this.isLoading = false;
-    console.log('✅ Gallery: Catálogo cargado');
   }
 
-  get filteredItems(): Garment[] {
-    return this.garmentCatalogService.getGarmentsByCategory(this.selectedCategory);
+  get filteredItems(): (Garment | null)[] {
+    const garments = this.garmentCatalogService.getGarmentsByCategory(this.selectedCategory);
+    return [null, ...garments];
   }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['selectedCategory'] && !changes['selectedCategory'].firstChange) {
-      console.log('📂 Gallery: Categoría cambiada a:', this.selectedCategory);
-      this.centerItemIndex = 0;
-      setTimeout(() => {
-        this.scrollToCenter(0);
-        const firstItem = this.filteredItems[0];
-        if (firstItem) {
-          this.selectedItemId = firstItem.id;
-          this.itemSelected.emit(firstItem);
-        }
-      }, 100);
+      const savedState = this.categoryStates.get(this.selectedCategory);
+
+      if (savedState) {
+        this.centerItemIndex = savedState.index;
+        this.selectedItemId = savedState.itemId;
+
+        setTimeout(() => {
+          this.scrollToCenter(this.centerItemIndex);
+
+          if (this.selectedItemId) {
+            const item = this.filteredItems.find(g => g?.id === this.selectedItemId);
+            if (item) {
+              this.itemSelected.emit(item);
+            }
+          } else {
+            this.itemSelected.emit(null);
+          }
+        }, 100);
+      } else {
+        this.centerItemIndex = 0;
+        this.selectedItemId = null;
+
+        setTimeout(() => {
+          this.scrollToCenter(0);
+        }, 100);
+      }
     }
   }
 
@@ -57,11 +73,6 @@ export class GalleryBarComponent implements OnInit, AfterViewInit, OnDestroy, On
     setTimeout(() => {
       this.centerItemIndex = 0;
       this.scrollToCenter(0);
-      const firstItem = this.filteredItems[0];
-      if (firstItem) {
-        this.selectedItemId = firstItem.id;
-        this.itemSelected.emit(firstItem);
-      }
     }, 100);
 
     const scrollEl = this.galleryScroll.nativeElement;
@@ -136,21 +147,27 @@ export class GalleryBarComponent implements OnInit, AfterViewInit, OnDestroy, On
 
     this.scrollTimeout = setTimeout(() => {
       const centeredItem = this.filteredItems[this.centerItemIndex];
-      if (centeredItem) {
-        this.selectedItemId = centeredItem.id;
-        this.itemSelected.emit(centeredItem);
+      const centeredItemId = centeredItem?.id || null;
+      if (this.selectedItemId === centeredItemId) {
+        return;
       }
     }, 200);
   }
 
-  onItemClick(item: Garment, event?: MouseEvent): void {
+  onItemClick(item: Garment | null, event?: MouseEvent): void {
     if (this.isDragging) return;
 
-    this.selectedItemId = item.id;
+    this.selectedItemId = item?.id || null;
     const index = this.filteredItems.indexOf(item);
     if (index !== -1) {
       this.scrollToCenter(index);
+      this.centerItemIndex = index;
     }
+
+    this.categoryStates.set(this.selectedCategory, {
+      index: this.centerItemIndex,
+      itemId: this.selectedItemId
+    });
 
     this.itemSelected.emit(item);
   }
@@ -179,17 +196,18 @@ export class GalleryBarComponent implements OnInit, AfterViewInit, OnDestroy, On
     if (this.centerItemIndex < maxIndex) {
       this.centerItemIndex++;
       this.scrollToCenter(this.centerItemIndex);
-      console.log('➡️ Gallery: Navegando al siguiente item:', this.centerItemIndex);
 
       setTimeout(() => {
         const nextItem = this.filteredItems[this.centerItemIndex];
-        if (nextItem) {
-          this.selectedItemId = nextItem.id;
-          this.itemSelected.emit(nextItem);
-        }
+        this.selectedItemId = nextItem?.id || null;
+
+        this.categoryStates.set(this.selectedCategory, {
+          index: this.centerItemIndex,
+          itemId: this.selectedItemId
+        });
+
+        this.itemSelected.emit(nextItem || null);
       }, 100);
-    } else {
-      console.log('⚠️ Ya estás en el último item');
     }
   }
 
@@ -197,17 +215,18 @@ export class GalleryBarComponent implements OnInit, AfterViewInit, OnDestroy, On
     if (this.centerItemIndex > 0) {
       this.centerItemIndex--;
       this.scrollToCenter(this.centerItemIndex);
-      console.log('⬅️ Gallery: Navegando al item anterior:', this.centerItemIndex);
 
       setTimeout(() => {
         const prevItem = this.filteredItems[this.centerItemIndex];
-        if (prevItem) {
-          this.selectedItemId = prevItem.id;
-          this.itemSelected.emit(prevItem);
-        }
+        this.selectedItemId = prevItem?.id || null;
+
+        this.categoryStates.set(this.selectedCategory, {
+          index: this.centerItemIndex,
+          itemId: this.selectedItemId
+        });
+
+        this.itemSelected.emit(prevItem || null);
       }, 100);
-    } else {
-      console.log('⚠️ Ya estás en el primer item');
     }
   }
 
@@ -224,5 +243,12 @@ export class GalleryBarComponent implements OnInit, AfterViewInit, OnDestroy, On
 
   isItemInCenter(index: number): boolean {
     return index === this.centerItemIndex;
+  }
+
+  isItemSelected(item: Garment | null): boolean {
+    if (item === null) {
+      return this.selectedItemId === null;
+    }
+    return this.selectedItemId === item.id;
   }
 }
