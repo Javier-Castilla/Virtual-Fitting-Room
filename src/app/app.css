@@ -1,3 +1,12 @@
+/* ✅ AGREGADO: Eliminar scrollbars globales */
+html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -14,10 +23,10 @@
 
 .main-content {
     width: 100%;
-    height: calc(100vh - 60px);
+    height: 100vh;
     position: relative;
     display: flex;
-    margin-top: 60px;
+    margin-top: 0;
 }
 
 .center-area {
@@ -34,7 +43,7 @@
     display: block !important;
     position: fixed;
     right: 0;
-    top: 60px;
+    top: 0;
     bottom: 0;
     z-index: 1000;
 }
@@ -42,12 +51,12 @@
 ::ng-deep app-camera-feed {
     display: block !important;
     position: fixed;
-    top: 60px;
+    top: 0;
     left: 0;
     right: 0;
     bottom: 0;
     width: 100% !important;
-    height: calc(100vh - 60px) !important;
+    height: 100vh !important;
     z-index: 1;
 }
 

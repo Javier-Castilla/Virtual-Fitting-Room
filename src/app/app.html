@@ -3,16 +3,15 @@
             (gestureDetected)="onGestureDetected($event)">
     </app-camera-feed>
 
-    <app-gender-selector
-            *ngIf="selectedGender === null"
-            [pointingGender]="pointingGender"
-            [pointingProgress]="pointingProgress"
-            (genderSelected)="onGenderSelected($event)">
-    </app-gender-selector>
+    @if (selectedGender === null) {
+        <app-gender-selector
+                [pointingGender]="pointingGender"
+                [pointingProgress]="pointingProgress"
+                (genderSelected)="onGenderSelected($event)">
+        </app-gender-selector>
+    }
 
-    <ng-container *ngIf="selectedGender !== null">
-        <app-header></app-header>
-
+    @if (selectedGender !== null) {
         <div class="main-content">
             <app-category-sidebar
                     [selectedCategory]="selectedCategory"
@@ -40,16 +39,19 @@
             </app-gallery-bar>
         </div>
 
-        <div class="peace-indicator"
-             *ngIf="peaceGestureActive"
-             [style.width.%]="peaceProgress">
-        </div>
-
-        <div class="save-popup" *ngIf="showSavePopup">
-            <div class="popup-content">
-                <span class="popup-icon">📸</span>
-                <span class="popup-text">¡Outfit guardado!</span>
+        @if (peaceGestureActive) {
+            <div class="peace-indicator"
+                 [style.width.%]="peaceProgress">
             </div>
-        </div>
-    </ng-container>
+        }
+
+        @if (showSavePopup) {
+            <div class="save-popup">
+                <div class="popup-content">
+                    <span class="popup-icon">📸</span>
+                    <span class="popup-text">¡Outfit guardado!</span>
+                </div>
+            </div>
+        }
+    }
 </div>
