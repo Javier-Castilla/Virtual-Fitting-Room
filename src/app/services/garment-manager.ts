@@ -17,8 +17,6 @@ type LoadedGarment = {
     hasSkeleton: boolean;
     shoulderDistance: number;
     hipDistance: number;
-    hipBonesOffset?: THREE.Vector3;
-    shoulderBonesOffset?: THREE.Vector3;
 };
 
 @Injectable({ providedIn: 'root' })
@@ -26,7 +24,6 @@ export class GarmentManagerService {
     private loaded: Map<string, LoadedGarment> = new Map();
     private smoothing = 0.3;
     private zPlane = 0;
-
     private categoryConfig: Record<GarmentCategory, any> = {
         [GarmentCategory.UPPER_BODY]: {
             widthFactor: 1.0,
@@ -34,7 +31,7 @@ export class GarmentManagerService {
             scaleLandmarks: [11, 12]
         },
         [GarmentCategory.LOWER_BODY]: {
-            widthFactor: 1.0,
+            widthFactor: 0.9,
             anchorLandmarks: [23, 24],
             scaleLandmarks: [23, 24]
         },
@@ -60,7 +57,13 @@ export class GarmentManagerService {
         const center = bbox.getCenter(new THREE.Vector3());
         const size = bbox.getSize(new THREE.Vector3());
 
-        inner.position.sub(center);
+        if (garment.category === GarmentCategory.LOWER_BODY) {
+            const waistAnchor = new THREE.Vector3(center.x, bbox.max.y, center.z);
+            inner.position.sub(waistAnchor);
+        } else {
+            inner.position.sub(center);
+        }
+
         inner.rotation.set(0, 0, 0);
 
         const root = new THREE.Group();
@@ -70,13 +73,9 @@ export class GarmentManagerService {
 
         const baseWidth = Math.max(size.x, 1e-6);
         const baseHeight = Math.max(size.y, 1e-6);
-
         const shoulderDistance = this.calculateBoneDistance(inner, 'shoulder');
         const hipDistance = this.calculateBoneDistance(inner, 'hip');
         const hasSkeleton = this.detectSkeleton(inner);
-
-        const hipBonesOffset = this.calculateBonesOffset(inner, 'hip');
-        const shoulderBonesOffset = this.calculateBonesOffset(inner, 'shoulder');
 
         this.loaded.set(garment.id, {
             root,
@@ -88,70 +87,21 @@ export class GarmentManagerService {
             visible: false,
             hasSkeleton,
             shoulderDistance,
-            hipDistance,
-            hipBonesOffset,
-            shoulderBonesOffset
+            hipDistance
         });
 
         this.threeService.scene.add(root);
-
         console.log('✅ Garment loaded:', {
             id: garment.id,
             category: garment.category,
             hasSkeleton: hasSkeleton ? '🦴' : '❌',
             shoulderDistance: shoulderDistance.toFixed(3),
-            hipDistance: hipDistance.toFixed(3),
-            hipBonesOffset: hipBonesOffset ? `(${hipBonesOffset.x.toFixed(2)}, ${hipBonesOffset.y.toFixed(2)}, ${hipBonesOffset.z.toFixed(2)})` : 'N/A',
-            shoulderBonesOffset: shoulderBonesOffset ? `(${shoulderBonesOffset.x.toFixed(2)}, ${shoulderBonesOffset.y.toFixed(2)}, ${shoulderBonesOffset.z.toFixed(2)})` : 'N/A'
+            hipDistance: hipDistance.toFixed(3)
         });
-    }
-
-    private calculateBonesOffset(model: THREE.Object3D, type: 'shoulder' | 'hip'): THREE.Vector3 | undefined {
-        const skeleton = this.findSkeletonFromModel(model);
-        if (!skeleton) return undefined;
-
-        let leftBone: THREE.Bone | undefined;
-        let rightBone: THREE.Bone | undefined;
-
-        if (type === 'shoulder') {
-            leftBone = skeleton.bones.find(b =>
-                b.name.toLowerCase().includes('leftshoulder') ||
-                b.name.toLowerCase().includes('shoulder_l')
-            );
-            rightBone = skeleton.bones.find(b =>
-                b.name.toLowerCase().includes('rightshoulder') ||
-                b.name.toLowerCase().includes('shoulder_r')
-            );
-        } else {
-            leftBone = skeleton.bones.find(b =>
-                b.name.toLowerCase().includes('lefthip') ||
-                b.name.toLowerCase().includes('leftupleg') ||
-                b.name.toLowerCase().includes('hip_l') ||
-                b.name.toLowerCase().includes('thigh_l')
-            );
-            rightBone = skeleton.bones.find(b =>
-                b.name.toLowerCase().includes('righthip') ||
-                b.name.toLowerCase().includes('rightupleg') ||
-                b.name.toLowerCase().includes('hip_r') ||
-                b.name.toLowerCase().includes('thigh_r')
-            );
-        }
-
-        if (!leftBone || !rightBone) return undefined;
-
-        const leftPos = new THREE.Vector3();
-        const rightPos = new THREE.Vector3();
-        leftBone.getWorldPosition(leftPos);
-        rightBone.getWorldPosition(rightPos);
-
-        const centerPos = new THREE.Vector3().addVectors(leftPos, rightPos).multiplyScalar(0.5);
-
-        return centerPos;
     }
 
     updateGarments(poseLandmarks2d: any[], poseLandmarks3d?: any[]): void {
         if (!poseLandmarks2d || poseLandmarks2d.length < 33) return;
-
         this.loaded.forEach((entry, garmentId) => {
             if (entry.visible) {
                 this.updateGarmentByCategory(garmentId, entry, poseLandmarks2d, poseLandmarks3d);
@@ -167,28 +117,21 @@ export class GarmentManagerService {
     ): void {
         const config = this.categoryConfig[entry.category];
         if (!config) return;
-
         const hasLandmarks = config.anchorLandmarks.every((i: number) => pose2d[i]);
         if (!hasLandmarks) return;
 
-        // ✅ Separar lógica: upper-body usa el método original, lower-body usa uno nuevo
         if (entry.hasSkeleton && pose3d && this.isUpperBody(entry.category)) {
-            // ✅ UPPER BODY - Lógica original que funciona bien
             this.updateUpperBodyGarment(garmentId, entry, pose2d, pose3d);
         } else if (entry.hasSkeleton && pose3d && entry.category === GarmentCategory.LOWER_BODY) {
-            // ✅ LOWER BODY - Nueva lógica específica para pantalones
             this.updateLowerBodyGarment(garmentId, entry, pose2d, pose3d);
         } else {
-            // Fallback para modelos sin esqueleto
             const anchorPos = this.calculateAnchorPosition(pose2d, config.anchorLandmarks);
             const scale = this.calculateScaleFromLandmarks(entry, pose2d, pose3d);
             const rotations = this.calculateRotations(entry.category, pose2d, pose3d);
-
             this.applyTransformations(entry, anchorPos, scale, rotations);
         }
     }
 
-    // ✅ MÉTODO ORIGINAL PARA UPPER BODY (sin cambios)
     private updateUpperBodyGarment(
         garmentId: string,
         entry: LoadedGarment,
@@ -211,7 +154,6 @@ export class GarmentManagerService {
 
         const effectiveWidth = Math.max(shoulderWidth2d, entry.referenceWidth * 0.7);
         const userShoulderWidthInUnits = effectiveWidth * planeWidth;
-
         const scale = THREE.MathUtils.clamp(
             userShoulderWidthInUnits / entry.shoulderDistance,
             0.1,
@@ -269,7 +211,6 @@ export class GarmentManagerService {
         this.skeletonRetarget.updateSkeleton(entry.root, pose3d, 'upper', garmentId);
     }
 
-    // ✅ NUEVO MÉTODO ESPECÍFICO PARA LOWER BODY
     private updateLowerBodyGarment(
         garmentId: string,
         entry: LoadedGarment,
@@ -281,8 +222,8 @@ export class GarmentManagerService {
         const vFov = THREE.MathUtils.degToRad(cam.fov);
         const planeHeight = 2 * dist * Math.tan(vFov / 2);
         const planeWidth = planeHeight * cam.aspect;
+        const config = this.categoryConfig[GarmentCategory.LOWER_BODY];
 
-        // Calcula el ancho de las caderas en 2D
         const leftHip2d = pose2d[23];
         const rightHip2d = pose2d[24];
         const hipWidth2d = Math.abs(rightHip2d.x - leftHip2d.x);
@@ -293,9 +234,8 @@ export class GarmentManagerService {
 
         const effectiveWidth = Math.max(hipWidth2d, entry.referenceWidth * 0.7);
         const userHipWidthInUnits = effectiveWidth * planeWidth;
-
         const scale = THREE.MathUtils.clamp(
-            userHipWidthInUnits / entry.hipDistance,
+            (userHipWidthInUnits / entry.hipDistance) * config.widthFactor,
             0.1,
             10
         );
@@ -303,32 +243,23 @@ export class GarmentManagerService {
         const targetScale = new THREE.Vector3(scale, scale, scale);
         entry.root.scale.lerp(targetScale, this.smoothing);
 
-        // ✅ Posiciona en el centro de las caderas
         const hipCenterX = (leftHip2d.x + rightHip2d.x) * 0.5;
         const hipCenterY = (leftHip2d.y + rightHip2d.y) * 0.5;
 
         const hipZ = (pose3d[23].z + pose3d[24].z) * 0.5;
         const targetZ = this.zPlane + hipZ * 2.5;
 
-        let x = (hipCenterX - 0.5) * planeWidth;
-        let y = (0.5 - hipCenterY) * planeHeight;
-
-        // Compensa el offset de los huesos de cadera
-        if (entry.hipBonesOffset) {
-            x -= entry.hipBonesOffset.x * scale;
-            y -= entry.hipBonesOffset.y * scale;
-        }
+        const x = (hipCenterX - 0.5) * planeWidth;
+        const y = (0.5 - hipCenterY) * planeHeight;
 
         const targetPos = new THREE.Vector3(x, y, targetZ);
         entry.root.position.lerp(targetPos, this.smoothing);
 
-        // Calcula rotación Z (inclinación de caderas)
         const dx = rightHip2d.x - leftHip2d.x;
         const dy = rightHip2d.y - leftHip2d.y;
         let rotZ = -Math.atan2(dy, dx);
         rotZ = this.normalizeAngle(rotZ);
 
-        // Calcula rotación Y (giro del cuerpo)
         if (pose3d.length >= 25) {
             const ls3d = pose3d[11];
             const rs3d = pose3d[12];
@@ -360,13 +291,11 @@ export class GarmentManagerService {
         entry.root.rotation.x = THREE.MathUtils.lerp(entry.root.rotation.x, 0, this.smoothing);
         entry.root.rotation.z = THREE.MathUtils.lerp(entry.root.rotation.z, rotZ, this.smoothing);
 
-        // ✅ Skeleton retargeting para animar las piernas
         this.skeletonRetarget.updateSkeleton(entry.root, pose3d, 'lower', garmentId);
     }
 
     private calculateBoneDistance(model: THREE.Object3D, type: 'shoulder' | 'hip'): number {
         const skeleton = this.findSkeletonFromModel(model);
-
         if (!skeleton) {
             const bbox = new THREE.Box3().setFromObject(model);
             return bbox.max.x - bbox.min.x;
@@ -408,7 +337,6 @@ export class GarmentManagerService {
             const rightPos = new THREE.Vector3();
             leftBone.getWorldPosition(leftPos);
             rightBone.getWorldPosition(rightPos);
-
             const distance = leftPos.distanceTo(rightPos);
             console.log(`📏 ${type} bones distance:`, distance);
             return distance;
@@ -425,10 +353,8 @@ export class GarmentManagerService {
     ): number {
         const config = this.categoryConfig[entry.category];
         const scaleLandmarks = config.scaleLandmarks;
-
         const leftLandmark = pose2d[scaleLandmarks[0]];
         const rightLandmark = pose2d[scaleLandmarks[1]];
-
         const width2d = Math.abs(rightLandmark.x - leftLandmark.x);
 
         if (width2d < 0.02) return entry.root.scale.x;
@@ -438,32 +364,25 @@ export class GarmentManagerService {
         }
 
         const effectiveWidth = Math.max(width2d, entry.referenceWidth * 0.7);
-
         const cam = this.threeService.camera;
         const dist = Math.max(cam.position.z - this.zPlane, 0.25);
         const vFov = THREE.MathUtils.degToRad(cam.fov);
         const planeHeight = 2 * dist * Math.tan(vFov / 2);
         const planeWidth = planeHeight * cam.aspect;
-
         const userWidthInUnits = effectiveWidth * planeWidth;
-
         const referenceDistance = this.isUpperBody(entry.category)
             ? entry.shoulderDistance
             : entry.hipDistance;
-
         let scale = (userWidthInUnits / referenceDistance) * config.widthFactor;
-
         return THREE.MathUtils.clamp(scale, 0.1, 10);
     }
 
     private calculateAnchorPosition(pose2d: any[], landmarkIndices: number[]): { x: number; y: number } {
         let sumX = 0, sumY = 0;
-
         for (const i of landmarkIndices) {
             sumX += pose2d[i].x;
             sumY += pose2d[i].y;
         }
-
         return {
             x: sumX / landmarkIndices.length,
             y: sumY / landmarkIndices.length
@@ -480,7 +399,6 @@ export class GarmentManagerService {
         if (category === GarmentCategory.UPPER_BODY || category === GarmentCategory.FULL_BODY) {
             const ls = pose2d[11];
             const rs = pose2d[12];
-
             if (ls && rs) {
                 const dx = rs.x - ls.x;
                 const dy = rs.y - ls.y;
@@ -490,7 +408,6 @@ export class GarmentManagerService {
         } else if (category === GarmentCategory.LOWER_BODY) {
             const lh = pose2d[23];
             const rh = pose2d[24];
-
             if (lh && rh) {
                 const dx = rh.x - lh.x;
                 const dy = rh.y - lh.y;
@@ -557,7 +474,6 @@ export class GarmentManagerService {
 
         entry.root.position.lerp(targetPos, this.smoothing);
         entry.root.scale.lerp(targetScale, this.smoothing);
-
         entry.root.rotation.x = THREE.MathUtils.lerp(entry.root.rotation.x, rotations.x, this.smoothing);
         entry.root.rotation.y = THREE.MathUtils.lerp(entry.root.rotation.y, rotations.y, this.smoothing);
         entry.root.rotation.z = THREE.MathUtils.lerp(entry.root.rotation.z, rotations.z, this.smoothing);
@@ -569,14 +485,12 @@ export class GarmentManagerService {
 
     private findSkeletonFromModel(model: THREE.Object3D): THREE.Skeleton | null {
         let skeleton: THREE.Skeleton | null = null;
-
         model.traverse((child) => {
             const mesh = child as THREE.SkinnedMesh;
             if (mesh?.isSkinnedMesh && mesh.skeleton) {
                 skeleton = mesh.skeleton;
             }
         });
-
         return skeleton;
     }
 
@@ -604,7 +518,6 @@ export class GarmentManagerService {
     removeGarment(garmentId: string): void {
         const entry = this.loaded.get(garmentId);
         if (!entry) return;
-
         this.threeService.scene.remove(entry.root);
         this.skeletonRetarget.clearCache(garmentId);
         this.loaded.delete(garmentId);

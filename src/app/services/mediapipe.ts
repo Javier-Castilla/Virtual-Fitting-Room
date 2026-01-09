@@ -45,12 +45,14 @@ export class MediapipeService {
         const result = this.poseLandmarker.detectForVideo(video, timestamp);
         const poseLandmarks = result.landmarks?.[0] ?? null;
         const worldLandmarks = result.worldLandmarks?.[0] ?? null;
+
         if (poseLandmarks) {
             this.poseLandmarks$.next(poseLandmarks);
         }
         if (worldLandmarks) {
             this.poseWorldLandmarks$.next(worldLandmarks);
         }
+
         return { poseLandmarks, worldLandmarks };
     }
 }

@@ -2,14 +2,19 @@
   "LOWER_BODY": {
     "PANTS": [
       "new_pants",
+      "pantalonius",
+      "pantaloniusv2",
+      "pantis",
       "pants"
     ]
   },
   "UPPER_BODY": {
     "JACKET": [
       "blazer",
+      "CropJacket",
       "dress",
-      "shirt"
+      "shirt",
+      "vestido"
     ]
   }
 }

@@ -1,62 +1,50 @@
-<div class="video-container">
-    <video #videoElement autoplay playsinline></video>
+<div class="camera-container">
+    <video #videoElement autoplay playsinline muted></video>
     <canvas #canvasElement class="overlay-canvas"></canvas>
 
-    <div class="debug-panel" *ngIf="debugMode">
-        <div class="debug-header">DEBUG INFO</div>
+    @if (debugMode) {
+        <div class="debug-panel">
+            <div class="debug-header">DEBUG PANEL</div>
 
-        <div class="debug-section">
-            <div class="section-title">Gestures</div>
-            <div class="debug-item">
-                <span class="label">Peace:</span>
-                <span class="value" [class.active]="gestureState.isPeace">
-          {{ gestureState.isPeace ? '✌️ YES' : 'NO' }}
-        </span>
+            <div class="debug-section">
+                <div class="section-title">Detection Stats</div>
+                <div class="debug-item">
+                    <span class="label">Pose Frames:</span>
+                    <span class="value" [class.active]="poseFrames > 0">{{ poseFrames }}</span>
+                </div>
+                <div class="debug-item">
+                    <span class="label">Landmarks:</span>
+                    <span class="value">{{ lastPoseLen }}</span>
+                </div>
+                <div class="debug-item">
+                    <span class="label">Hands:</span>
+                    <span class="value" [class.active]="handsCount > 0">{{ handsCount }}</span>
+                </div>
             </div>
-            <div class="debug-item">
-                <span class="label">Pointing:</span>
-                <span class="value" [class.active]="gestureState.isPointing">
-          {{ gestureState.isPointing ? '👉 YES' : 'NO' }}
-        </span>
+
+            <div class="debug-section">
+                <div class="section-title">Gesture State</div>
+                <div class="debug-item">
+                    <span class="label">Last Gesture:</span>
+                    <span class="value">{{ lastGesture }}</span>
+                </div>
+                <div class="debug-item">
+                    <span class="label">Peace:</span>
+                    <span class="value" [class.active]="gestureState.isPeace">
+            {{ gestureState.isPeace ? 'Yes' : 'No' }}
+          </span>
+                </div>
+                <div class="debug-item">
+                    <span class="label">Pointing:</span>
+                    <span class="value" [class.active]="gestureState.isPointing">
+            {{ gestureState.isPointing ? 'Yes' : 'No' }}
+          </span>
+                </div>
             </div>
-            <div class="debug-item">
-                <span class="label">Last:</span>
-                <span class="value">{{ lastGesture }}</span>
+
+            <div class="debug-footer">
+                Press <kbd>L</kbd> to toggle debug
             </div>
         </div>
-
-        <div class="debug-section">
-            <div class="section-title">Detection</div>
-            <div class="debug-item">
-                <span class="label">Pose Landmarks:</span>
-                <span class="value" [class.active]="lastPoseLen > 0">
-          {{ lastPoseLen > 0 ? '✅ ' + lastPoseLen : '❌ NO POSE' }}
-        </span>
-            </div>
-            <div class="debug-item">
-                <span class="label">Hands:</span>
-                <span class="value">{{ handsCount }}</span>
-            </div>
-            <div class="debug-item">
-                <span class="label">Hand Pos:</span>
-                <span class="value" *ngIf="gestureState.handPosition">
-          {{ (gestureState.handPosition.x * 100).toFixed(0) }}%,
-                    {{ (gestureState.handPosition.y * 100).toFixed(0) }}%
-        </span>
-                <span class="value" *ngIf="!gestureState.handPosition">N/A</span>
-            </div>
-        </div>
-
-        <div class="debug-section">
-            <div class="section-title">Performance</div>
-            <div class="debug-item">
-                <span class="label">Pose Frames:</span>
-                <span class="value">{{ poseFrames }}</span>
-            </div>
-        </div>
-
-        <div class="debug-footer">
-            Press <kbd>L</kbd> to toggle
-        </div>
-    </div>
+    }
 </div>
