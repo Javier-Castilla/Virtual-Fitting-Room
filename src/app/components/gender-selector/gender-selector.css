@@ -1,0 +1,196 @@
+.gender-selector-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.5) 0%, rgba(118, 75, 162, 0.5) 100%);
+    backdrop-filter: blur(5px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    animation: fadeIn 0.5s ease;
+    pointer-events: none;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.gender-selector-container {
+    text-align: center;
+    max-width: 900px;
+    padding: 40px;
+    pointer-events: auto;
+}
+
+.title {
+    font-size: 48px;
+    font-weight: bold;
+    color: white;
+    margin: 0 0 16px 0;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.subtitle {
+    font-size: 18px;
+    color: rgba(255, 255, 255, 0.95);
+    margin: 0 0 48px 0;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.gender-options {
+    display: flex;
+    gap: 32px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 32px;
+}
+
+.gender-card {
+    width: 220px;
+    height: 260px;
+    background: rgba(255, 255, 255, 0.95);
+    border: none;
+    border-radius: 24px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    transition: all 0.3s ease;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+    position: relative;
+    overflow: hidden;
+}
+
+.gender-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, transparent 0%, rgba(255, 255, 255, 0.2) 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.gender-card:hover::before {
+    opacity: 1;
+}
+
+.gender-card:hover {
+    transform: translateY(-10px) scale(1.08);
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+}
+
+.gender-card.pointing {
+    transform: scale(1.15);
+    box-shadow: 0 0 40px rgba(255, 255, 255, 0.9);
+    border: 4px solid white;
+}
+
+.gender-card.male:hover,
+.gender-card.male.pointing {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.gender-card.female:hover,
+.gender-card.female.pointing {
+    background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+}
+
+.gender-card.unisex:hover,
+.gender-card.unisex.pointing {
+    background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+}
+
+.gender-icon {
+    font-size: 90px;
+    transition: transform 0.3s ease;
+}
+
+.gender-card:hover .gender-icon,
+.gender-card.pointing .gender-icon {
+    transform: scale(1.3);
+}
+
+.gender-label {
+    font-size: 26px;
+    font-weight: 600;
+    color: #333;
+    transition: color 0.3s ease;
+}
+
+.gender-card:hover .gender-label,
+.gender-card.pointing .gender-label {
+    color: white;
+}
+
+.pointing-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 8px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 0 0 20px 20px;
+    overflow: hidden;
+}
+
+.progress-bar {
+    height: 100%;
+    background: white;
+    transition: width 0.1s linear;
+    box-shadow: 0 0 15px rgba(255, 255, 255, 0.9);
+}
+
+.instruction {
+    font-size: 18px;
+    color: rgba(255, 255, 255, 1);
+    margin: 0;
+    font-style: italic;
+    font-weight: 600;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 768px) {
+    .title {
+        font-size: 36px;
+    }
+
+    .subtitle {
+        font-size: 16px;
+    }
+
+    .gender-options {
+        flex-direction: column;
+        align-items: center;
+        gap: 24px;
+    }
+
+    .gender-card {
+        width: 180px;
+        height: 220px;
+    }
+
+    .gender-icon {
+        font-size: 70px;
+    }
+
+    .gender-label {
+        font-size: 22px;
+    }
+
+    .instruction {
+        font-size: 16px;
+    }
+}

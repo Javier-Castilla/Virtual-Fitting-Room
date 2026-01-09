@@ -1,20 +1,18 @@
 {
-  "LOWER_BODY": {
-    "PANTS": [
-      "new_pants",
-      "pantalonius",
-      "pantaloniusv2",
-      "pantis",
-      "pants"
-    ]
+  "female": {
+    "LOWER_BODY": {
+      "PANTS": [
+        "pants"
+      ]
+    },
+    "UPPER_BODY": {
+      "JACKET": [
+        "CropJacket",
+        "dress",
+        "shirt",
+        "vestido"
+      ]
+    }
   },
-  "UPPER_BODY": {
-    "JACKET": [
-      "blazer",
-      "CropJacket",
-      "dress",
-      "shirt",
-      "vestido"
-    ]
-  }
+  "male": {}
 }

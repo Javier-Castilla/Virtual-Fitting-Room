@@ -1,6 +1,6 @@
 import { GarmentType } from '../enums/garment-type.enum';
 import { GarmentCategory } from '../enums/garment-category.enum';
-import { GarmentSize } from '../enums/garment-size.enum';
+import {GarmentGender} from "../enums/garment-gender.enum";
 
 export class Garment {
     id: string;
@@ -9,6 +9,7 @@ export class Garment {
     category: GarmentCategory;
     modelPath: string;
     imagePath: string;
+    gender: GarmentGender;
 
     constructor(
         id: string,
@@ -17,6 +18,7 @@ export class Garment {
         category: GarmentCategory,
         modelPath: string,
         imagePath: string,
+        gender: GarmentGender
     ) {
         this.id = id;
         this.name = name;
@@ -24,5 +26,6 @@ export class Garment {
         this.category = category;
         this.modelPath = modelPath;
         this.imagePath = imagePath;
+        this.gender = gender;
     }
 }

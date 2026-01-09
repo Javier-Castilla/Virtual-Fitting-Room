@@ -1,46 +1,55 @@
 <div class="app-container">
-    <app-header></app-header>
-
-    <div class="main-content">
-        <app-camera-feed
-            #cameraFeed
+    <app-camera-feed
             (gestureDetected)="onGestureDetected($event)">
-        </app-camera-feed>
+    </app-camera-feed>
 
-        <div class="center-area">
-            <app-scene-viewer [selectedGarments]="selectedGarments"></app-scene-viewer>
+    <app-gender-selector
+            *ngIf="selectedGender === null"
+            [pointingGender]="pointingGender"
+            [pointingProgress]="pointingProgress"
+            (genderSelected)="onGenderSelected($event)">
+    </app-gender-selector>
+
+    <ng-container *ngIf="selectedGender !== null">
+        <app-header></app-header>
+
+        <div class="main-content">
+            <app-category-sidebar
+                    [selectedCategory]="selectedCategory"
+                    [selectedGender]="selectedGender"
+                    [pointingCategory]="pointingCategory"
+                    [pointingGenderButton]="pointingGenderButton"
+                    [pointingProgress]="pointingProgress"
+                    (categorySelected)="onCategorySelected($event)"
+                    (changeGender)="onChangeGender()">
+            </app-category-sidebar>
+
+            <div class="center-area">
+                <app-scene-viewer
+                        [selectedGarments]="selectedGarments">
+                </app-scene-viewer>
+            </div>
         </div>
 
-        <app-category-sidebar
+        <div class="bottom-bar">
+            <app-gallery-bar
+                #galleryBar
                 [selectedCategory]="selectedCategory"
-                [pointingCategory]="pointingCategory"
-                [pointingProgress]="pointingProgress"
-                (categorySelected)="onCategorySelected($event)">
-        </app-category-sidebar>
-    </div>
+                [selectedGender]="selectedGender"
+                (itemSelected)="onGarmentSelected($event)">
+            </app-gallery-bar>
+        </div>
 
-    <app-gallery-bar
-        #galleryBar
-        [selectedCategory]="selectedCategory"
-        (itemSelected)="onGarmentSelected($event)">
-    </app-gallery-bar>
+        <div class="peace-indicator"
+             *ngIf="peaceGestureActive"
+             [style.width.%]="peaceProgress">
+        </div>
 
-    @if (peaceGestureActive && peaceProgress > 0) {
-        <div class="peace-progress-container">
-            <div class="peace-progress-bar">
-                <div class="peace-progress-fill" [style.width.%]="peaceProgress"></div>
-            </div>
-            <div class="peace-progress-text">
-                ✌️ Guardando outfit... {{ peaceProgress.toFixed(0) }}%
+        <div class="save-popup" *ngIf="showSavePopup">
+            <div class="popup-content">
+                <span class="popup-icon">📸</span>
+                <span class="popup-text">¡Outfit guardado!</span>
             </div>
         </div>
-    }
-
-    @if (showSavePopup) {
-        <div class="save-popup">
-            <div class="save-popup-icon">✅</div>
-            <div class="save-popup-title">¡OUTFIT GUARDADO!</div>
-            <div class="save-popup-subtitle">Tu look ha sido guardado exitosamente</div>
-        </div>
-    }
+    </ng-container>
 </div>

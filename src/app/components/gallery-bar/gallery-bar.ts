@@ -2,6 +2,7 @@ import { Component, Output, EventEmitter, Input, ViewChild, ElementRef, AfterVie
 import { CommonModule } from '@angular/common';
 import { Garment } from '../../../domain/model/garment';
 import { GarmentCategory } from '../../../domain/enums/garment-category.enum';
+import { GarmentGender } from '../../../domain/enums/garment-gender.enum';
 import { GarmentCatalogService} from "../../services/garments-catalog.service";
 
 @Component({
@@ -13,6 +14,7 @@ import { GarmentCatalogService} from "../../services/garments-catalog.service";
 })
 export class GalleryBarComponent implements OnInit, AfterViewInit, OnDestroy, OnChanges {
   @Input() selectedCategory: GarmentCategory = GarmentCategory.UPPER_BODY;
+  @Input() selectedGender: GarmentGender = GarmentGender.UNISEX;
   @Output() itemSelected = new EventEmitter<Garment | null>();
   @ViewChild('galleryScroll') galleryScroll!: ElementRef;
 
@@ -20,7 +22,7 @@ export class GalleryBarComponent implements OnInit, AfterViewInit, OnDestroy, On
   centerItemIndex: number = 0;
   isLoading = true;
 
-  private categoryStates: Map<GarmentCategory, { index: number, itemId: string | null }> = new Map();
+  private categoryStates: Map<string, { index: number, itemId: string | null }> = new Map();
   private isDragging = false;
   private startX = 0;
   private scrollLeft = 0;
@@ -34,13 +36,23 @@ export class GalleryBarComponent implements OnInit, AfterViewInit, OnDestroy, On
   }
 
   get filteredItems(): (Garment | null)[] {
-    const garments = this.garmentCatalogService.getGarmentsByCategory(this.selectedCategory);
+    const garments = this.garmentCatalogService.getGarmentsByCategoryAndGender(
+        this.selectedCategory,
+        this.selectedGender
+    );
     return [null, ...garments];
   }
 
+  private getStateKey(): string {
+    return `${this.selectedCategory}_${this.selectedGender}`;
+  }
+
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['selectedCategory'] && !changes['selectedCategory'].firstChange) {
-      const savedState = this.categoryStates.get(this.selectedCategory);
+    if ((changes['selectedCategory'] && !changes['selectedCategory'].firstChange) ||
+        (changes['selectedGender'] && !changes['selectedGender'].firstChange)) {
+
+      const stateKey = this.getStateKey();
+      const savedState = this.categoryStates.get(stateKey);
 
       if (savedState) {
         this.centerItemIndex = savedState.index;
@@ -164,7 +176,8 @@ export class GalleryBarComponent implements OnInit, AfterViewInit, OnDestroy, On
       this.centerItemIndex = index;
     }
 
-    this.categoryStates.set(this.selectedCategory, {
+    const stateKey = this.getStateKey();
+    this.categoryStates.set(stateKey, {
       index: this.centerItemIndex,
       itemId: this.selectedItemId
     });
@@ -201,7 +214,8 @@ export class GalleryBarComponent implements OnInit, AfterViewInit, OnDestroy, On
         const nextItem = this.filteredItems[this.centerItemIndex];
         this.selectedItemId = nextItem?.id || null;
 
-        this.categoryStates.set(this.selectedCategory, {
+        const stateKey = this.getStateKey();
+        this.categoryStates.set(stateKey, {
           index: this.centerItemIndex,
           itemId: this.selectedItemId
         });
@@ -220,7 +234,8 @@ export class GalleryBarComponent implements OnInit, AfterViewInit, OnDestroy, On
         const prevItem = this.filteredItems[this.centerItemIndex];
         this.selectedItemId = prevItem?.id || null;
 
-        this.categoryStates.set(this.selectedCategory, {
+        const stateKey = this.getStateKey();
+        this.categoryStates.set(stateKey, {
           index: this.centerItemIndex,
           itemId: this.selectedItemId
         });

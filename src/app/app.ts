@@ -6,12 +6,14 @@ import {CameraFeedComponent} from './components/camera-feed/camera-feed';
 import {HeaderComponent} from './components/header/header';
 import {CategorySidebarComponent} from './components/category-sidebar/category-sidebar';
 import {GalleryBarComponent} from './components/gallery-bar/gallery-bar';
+import {GenderSelectorComponent} from './components/gender-selector/gender-selector';
 import {GarmentManagerService} from './services/garment-manager';
 import {MediapipeService} from './services/mediapipe';
 import {GestureDetectorService, GestureState} from './services/gesture-detection/gesture-detector.service';
 import {type GestureResult, GestureType} from './services/gesture-detection/recognizers/gesture-recognizer.interface';
 import {Garment} from '../domain/model/garment';
 import {GarmentCategory} from "../domain/enums/garment-category.enum";
+import {GarmentGender} from "../domain/enums/garment-gender.enum";
 import {GarmentCatalogService} from "./services/garments-catalog.service";
 
 @Component({
@@ -23,7 +25,8 @@ import {GarmentCatalogService} from "./services/garments-catalog.service";
     CameraFeedComponent,
     HeaderComponent,
     CategorySidebarComponent,
-    GalleryBarComponent
+    GalleryBarComponent,
+    GenderSelectorComponent
   ],
   templateUrl: './app.html',
   styleUrls: ['./app.css'],
@@ -34,6 +37,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild(CategorySidebarComponent) categorySidebar!: CategorySidebarComponent;
   @ViewChild(SceneViewerComponent) sceneViewer!: SceneViewerComponent;
 
+  selectedGender: GarmentGender | null = null;
   selectedCategory: GarmentCategory = GarmentCategory.UPPER_BODY;
 
   selectedGarments: Map<GarmentCategory, Garment | null> = new Map([
@@ -43,6 +47,11 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   ]);
 
   protected readonly categories = Object.values(GarmentCategory);
+  protected readonly genderOptions = [
+    GarmentGender.MALE,
+    GarmentGender.FEMALE,
+    GarmentGender.UNISEX
+  ];
 
   private readonly HIT_AREA_MARGIN = 50;
   private readonly POINTING_SELECTION_DELAY = 1200;
@@ -56,9 +65,12 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   showSavePopup = false;
 
   pointingCategory: GarmentCategory | null = null;
+  pointingGender: GarmentGender | null = null;
+  pointingGenderButton: boolean = false;
   pointingProgress: number = 0;
   private pointingStartTime: number = 0;
   private lastPointingCategory: GarmentCategory | null = null;
+  private lastPointingGender: GarmentGender | null = null;
   private lastValidDetectionTime: number = 0;
 
   private gestureStateSub?: Subscription;
@@ -96,6 +108,26 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngAfterViewInit(): void {}
+
+  onGenderSelected(gender: GarmentGender): void {
+    this.selectedGender = gender;
+    this.selectedGarments = new Map([
+      [GarmentCategory.UPPER_BODY, null],
+      [GarmentCategory.LOWER_BODY, null],
+      [GarmentCategory.FULL_BODY, null]
+    ]);
+    this.cdr.detectChanges();
+  }
+
+  onChangeGender(): void {
+    this.selectedGender = null;
+    this.selectedGarments = new Map([
+      [GarmentCategory.UPPER_BODY, null],
+      [GarmentCategory.LOWER_BODY, null],
+      [GarmentCategory.FULL_BODY, null]
+    ]);
+    this.cdr.detectChanges();
+  }
 
   onGestureDetected(gesture: GestureResult): void {
     switch (gesture.type) {
@@ -163,8 +195,55 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     const screenPos = this.normalizedToScreen(handPos.x, handPos.y);
-    const targetCategory = this.detectCategoryAtPosition(screenPos.x, screenPos.y);
 
+    if (this.selectedGender === null) {
+      const targetGender = this.detectGenderAtPosition(screenPos.x, screenPos.y);
+      this.handleGenderPointing(targetGender);
+    } else {
+      const targetCategory = this.detectCategoryAtPosition(screenPos.x, screenPos.y);
+
+      if (targetCategory) {
+        this.handleCategoryPointing(targetCategory);
+      } else {
+        const isPointingGenderButton = this.detectGenderButtonAtPosition(screenPos.x, screenPos.y);
+
+        if (isPointingGenderButton) {
+          this.handleGenderButtonPointing();
+        } else {
+          this.resetPointingStateWithGracePeriod();
+        }
+      }
+    }
+  }
+
+  private handleGenderPointing(targetGender: GarmentGender | null): void {
+    if (targetGender) {
+      this.lastValidDetectionTime = Date.now();
+
+      if (this.pointingGender === targetGender) {
+        const elapsed = Date.now() - this.pointingStartTime;
+        this.pointingProgress = Math.min((elapsed / this.POINTING_SELECTION_DELAY) * 100, 100);
+
+        if (elapsed >= this.POINTING_SELECTION_DELAY) {
+          this.onGenderSelected(targetGender);
+          this.forceResetPointingState();
+        }
+      } else if (this.lastPointingGender === targetGender &&
+          Date.now() - this.lastValidDetectionTime < this.RESET_GRACE_PERIOD) {
+        this.pointingGender = targetGender;
+      } else {
+        this.forceResetPointingState();
+        this.pointingGender = targetGender;
+        this.lastPointingGender = targetGender;
+        this.pointingStartTime = Date.now();
+        this.pointingProgress = 0;
+      }
+    } else {
+      this.resetPointingStateWithGracePeriod();
+    }
+  }
+
+  private handleCategoryPointing(targetCategory: GarmentCategory | null): void {
     if (targetCategory) {
       this.lastValidDetectionTime = Date.now();
 
@@ -191,10 +270,59 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
+  private handleGenderButtonPointing(): void {
+    this.lastValidDetectionTime = Date.now();
+
+    if (this.pointingGenderButton) {
+      const elapsed = Date.now() - this.pointingStartTime;
+      this.pointingProgress = Math.min((elapsed / this.POINTING_SELECTION_DELAY) * 100, 100);
+
+      if (elapsed >= this.POINTING_SELECTION_DELAY) {
+        this.onChangeGender();
+        this.forceResetPointingState();
+      }
+    } else {
+      this.forceResetPointingState();
+      this.pointingGenderButton = true;
+      this.pointingStartTime = Date.now();
+      this.pointingProgress = 0;
+    }
+  }
+
   private normalizedToScreen(normalizedX: number, normalizedY: number): { x: number, y: number } {
     const screenX = window.innerWidth * normalizedX;
-    const screenY = (window.innerHeight - this.HEADER_HEIGHT) * normalizedY + this.HEADER_HEIGHT;
+    let screenY: number;
+
+    if (this.selectedGender === null) {
+      screenY = window.innerHeight * normalizedY;
+    } else {
+      screenY = (window.innerHeight - this.HEADER_HEIGHT) * normalizedY + this.HEADER_HEIGHT;
+    }
+
     return { x: screenX, y: screenY };
+  }
+
+  private detectGenderAtPosition(x: number, y: number): GarmentGender | null {
+    const genderElements = document.querySelectorAll('.gender-card');
+
+    for (let i = 0; i < genderElements.length; i++) {
+      const element = genderElements[i] as HTMLElement;
+      const rect = element.getBoundingClientRect();
+
+      const expandedRect = {
+        left: rect.left - this.HIT_AREA_MARGIN,
+        right: rect.right + this.HIT_AREA_MARGIN,
+        top: rect.top - this.HIT_AREA_MARGIN,
+        bottom: rect.bottom + this.HIT_AREA_MARGIN
+      };
+
+      if (x >= expandedRect.left && x <= expandedRect.right &&
+          y >= expandedRect.top && y <= expandedRect.bottom) {
+        return this.genderOptions[i];
+      }
+    }
+
+    return null;
   }
 
   private detectCategoryAtPosition(x: number, y: number): GarmentCategory | null {
@@ -226,6 +354,22 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     return null;
   }
 
+  private detectGenderButtonAtPosition(x: number, y: number): boolean {
+    const buttonElement = document.querySelector('.change-gender-btn');
+    if (!buttonElement) return false;
+
+    const rect = buttonElement.getBoundingClientRect();
+    const expandedRect = {
+      left: rect.left - this.HIT_AREA_MARGIN,
+      right: rect.right + this.HIT_AREA_MARGIN,
+      top: rect.top - this.HIT_AREA_MARGIN,
+      bottom: rect.bottom + this.HIT_AREA_MARGIN
+    };
+
+    return x >= expandedRect.left && x <= expandedRect.right &&
+        y >= expandedRect.top && y <= expandedRect.bottom;
+  }
+
   private resetPointingStateWithGracePeriod(): void {
     const timeSinceLastDetection = Date.now() - this.lastValidDetectionTime;
     if (timeSinceLastDetection > this.RESET_GRACE_PERIOD) {
@@ -234,9 +378,12 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private forceResetPointingState(): void {
-    if (this.pointingCategory !== null || this.pointingProgress > 0) {
+    if (this.pointingCategory !== null || this.pointingGender !== null || this.pointingGenderButton || this.pointingProgress > 0) {
       this.pointingCategory = null;
+      this.pointingGender = null;
+      this.pointingGenderButton = false;
       this.lastPointingCategory = null;
+      this.lastPointingGender = null;
       this.pointingProgress = 0;
       this.pointingStartTime = 0;
       this.lastValidDetectionTime = 0;
