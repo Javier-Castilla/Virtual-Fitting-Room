@@ -1,18 +1,46 @@
 {
   "female": {
+    "FULL_BODY": {
+      "DRESS": [
+        "vestidoCute",
+        "vestidoLargoMedievalMujer",
+        "vestidoQipaoMujer"
+      ]
+    },
     "LOWER_BODY": {
       "PANTS": [
-        "pants"
+        "falaCortaMujer",
+        "faldaCuadradosAzules",
+        "faldaCueroDragonMujer",
+        "faldaLargaJeanMujer",
+        "pantalonBlanco",
+        "pantalonNegroMujer"
       ]
     },
     "UPPER_BODY": {
       "JACKET": [
-        "CropJacket",
-        "dress",
-        "shirt",
-        "vestido"
+        "abrigoNaranjaMujer",
+        "camisaBaásicaNegraMujer",
+        "camisaMangasCortasMujer",
+        "camisaMangasLargasFuturistaMujer",
+        "chaquetaCueroDragonMujer",
+        "CropJacket"
       ]
     }
   },
-  "male": {}
+  "male": {
+    "FULL_BODY": {},
+    "LOWER_BODY": {
+      "PANTS": [
+        "pantalonMarronHombre"
+      ]
+    },
+    "UPPER_BODY": {
+      "JACKET": [
+        "abrigoBultosoHombre",
+        "camisaBlancaMarronHombre",
+        "sueterHombreAzul"
+      ]
+    }
+  }
 }

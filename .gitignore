@@ -6,6 +6,10 @@
 /out-tsc
 /bazel-out
 
+/public/assets/**
+
+*.glb
+
 # Node
 /node_modules
 npm-debug.log

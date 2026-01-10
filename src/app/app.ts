@@ -1,20 +1,19 @@
-import {AfterViewInit, Component, OnDestroy, OnInit, ViewChild, ChangeDetectorRef} from '@angular/core';
+import {AfterViewInit, ChangeDetectorRef, Component, OnDestroy, OnInit, ViewChild} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {interval, Subscription} from 'rxjs';
 import {SceneViewerComponent} from './components/scene-viewer/scene-viewer';
 import {CameraFeedComponent} from './components/camera-feed/camera-feed';
-import {HeaderComponent} from './components/header/header';
 import {CategorySidebarComponent} from './components/category-sidebar/category-sidebar';
 import {GalleryBarComponent} from './components/gallery-bar/gallery-bar';
 import {GenderSelectorComponent} from './components/gender-selector/gender-selector';
 import {GarmentManagerService} from './services/garment-manager';
 import {MediapipeService} from './services/mediapipe';
-import {GestureDetectorService, GestureState} from './services/gesture-detection/gesture-detector.service';
-import {type GestureResult, GestureType} from './services/gesture-detection/recognizers/gesture-recognizer.interface';
+import {GestureDetectorService, GestureState, GestureType} from './services/gesture-detection/gesture-detector.service';
+import type {GestureResult} from './services/gesture-detection/recognizers/gesture-recognizer.interface';
 import {Garment} from '../domain/model/garment';
-import {GarmentCategory} from "../domain/enums/garment-category.enum";
-import {GarmentGender} from "../domain/enums/garment-gender.enum";
-import {GarmentCatalogService} from "./services/garments-catalog.service";
+import {GarmentCategory} from '../domain/enums/garment-category.enum';
+import {GarmentGender} from '../domain/enums/garment-gender.enum';
+import {GarmentCatalogService} from './services/garments-catalog.service';
 
 @Component({
   selector: 'app-root',
@@ -23,7 +22,6 @@ import {GarmentCatalogService} from "./services/garments-catalog.service";
     CommonModule,
     SceneViewerComponent,
     CameraFeedComponent,
-    HeaderComponent,
     CategorySidebarComponent,
     GalleryBarComponent,
     GenderSelectorComponent
@@ -39,7 +37,6 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   selectedGender: GarmentGender | null = null;
   selectedCategory: GarmentCategory = GarmentCategory.UPPER_BODY;
-
   selectedGarments: Map<GarmentCategory, Garment | null> = new Map([
     [GarmentCategory.UPPER_BODY, null],
     [GarmentCategory.LOWER_BODY, null],
@@ -47,11 +44,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   ]);
 
   protected readonly categories = Object.values(GarmentCategory);
-  protected readonly genderOptions = [
-    GarmentGender.MALE,
-    GarmentGender.FEMALE,
-    GarmentGender.UNISEX
-  ];
+  protected readonly genderOptions = [GarmentGender.MALE, GarmentGender.FEMALE, GarmentGender.UNISEX];
 
   private readonly HIT_AREA_MARGIN = 50;
   private readonly POINTING_SELECTION_DELAY = 1200;
@@ -76,12 +69,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   private gestureStateSub?: Subscription;
   private pointingCheckInterval?: Subscription;
   private peaceCheckInterval?: Subscription;
-
-  private currentGestureState: GestureState = {
-    isPeace: false,
-    isPointing: false,
-    handPosition: null
-  };
+  private currentGestureState: GestureState = { isPeace: false, isPointing: false, handPosition: null };
 
   constructor(
       private garmentManager: GarmentManagerService,
@@ -93,18 +81,11 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   async ngOnInit(): Promise<void> {
     await this.garmentCatalog.initialize();
-
     this.gestureStateSub = this.gestureDetector.gestureState$.subscribe(state => {
       this.currentGestureState = state;
     });
-
-    this.pointingCheckInterval = interval(50).subscribe(() => {
-      this.checkPointingGesture();
-    });
-
-    this.peaceCheckInterval = interval(50).subscribe(() => {
-      this.checkPeaceGesture();
-    });
+    this.pointingCheckInterval = interval(50).subscribe(() => this.checkPointingGesture());
+    this.peaceCheckInterval = interval(50).subscribe(() => this.checkPeaceGesture());
   }
 
   ngAfterViewInit(): void {}
@@ -146,7 +127,6 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private checkPeaceGesture(): void {
     const isPeace = this.currentGestureState.isPeace;
-
     if (isPeace) {
       if (!this.peaceGestureActive) {
         this.peaceGestureActive = true;
@@ -155,7 +135,6 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       } else {
         const elapsed = Date.now() - this.peaceStartTime;
         this.peaceProgress = Math.min((elapsed / this.PEACE_SAVE_DELAY) * 100, 100);
-
         if (elapsed >= this.PEACE_SAVE_DELAY && !this.showSavePopup) {
           this.saveOutfit();
         }
@@ -163,22 +142,21 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     } else {
       this.resetPeaceGesture();
     }
-
     this.cdr.detectChanges();
   }
 
   private resetPeaceGesture(): void {
-    if (this.peaceGestureActive || this.peaceProgress > 0) {
-      this.peaceGestureActive = false;
+    if (this.peaceGestureActive) {
       this.peaceProgress = 0;
-      this.peaceStartTime = 0;
     }
+    this.peaceGestureActive = false;
+    this.peaceProgress = 0;
+    this.peaceStartTime = 0;
   }
 
   private saveOutfit(): void {
     this.resetPeaceGesture();
     this.showSavePopup = true;
-
     setTimeout(() => {
       this.showSavePopup = false;
       this.cdr.detectChanges();
@@ -201,12 +179,10 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       this.handleGenderPointing(targetGender);
     } else {
       const targetCategory = this.detectCategoryAtPosition(screenPos.x, screenPos.y);
-
       if (targetCategory) {
         this.handleCategoryPointing(targetCategory);
       } else {
         const isPointingGenderButton = this.detectGenderButtonAtPosition(screenPos.x, screenPos.y);
-
         if (isPointingGenderButton) {
           this.handleGenderButtonPointing();
         } else {
@@ -219,17 +195,15 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   private handleGenderPointing(targetGender: GarmentGender | null): void {
     if (targetGender) {
       this.lastValidDetectionTime = Date.now();
-
       if (this.pointingGender === targetGender) {
         const elapsed = Date.now() - this.pointingStartTime;
         this.pointingProgress = Math.min((elapsed / this.POINTING_SELECTION_DELAY) * 100, 100);
-
         if (elapsed >= this.POINTING_SELECTION_DELAY) {
           this.onGenderSelected(targetGender);
           this.forceResetPointingState();
         }
       } else if (this.lastPointingGender === targetGender &&
-          Date.now() - this.lastValidDetectionTime < this.RESET_GRACE_PERIOD) {
+          Date.now() - this.lastValidDetectionTime <= this.RESET_GRACE_PERIOD) {
         this.pointingGender = targetGender;
       } else {
         this.forceResetPointingState();
@@ -246,17 +220,15 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   private handleCategoryPointing(targetCategory: GarmentCategory | null): void {
     if (targetCategory) {
       this.lastValidDetectionTime = Date.now();
-
       if (this.pointingCategory === targetCategory) {
         const elapsed = Date.now() - this.pointingStartTime;
         this.pointingProgress = Math.min((elapsed / this.POINTING_SELECTION_DELAY) * 100, 100);
-
         if (elapsed >= this.POINTING_SELECTION_DELAY) {
           this.onCategorySelected(targetCategory);
           this.forceResetPointingState();
         }
       } else if (this.lastPointingCategory === targetCategory &&
-          Date.now() - this.lastValidDetectionTime < this.RESET_GRACE_PERIOD) {
+          Date.now() - this.lastValidDetectionTime <= this.RESET_GRACE_PERIOD) {
         this.pointingCategory = targetCategory;
       } else {
         this.forceResetPointingState();
@@ -272,11 +244,9 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private handleGenderButtonPointing(): void {
     this.lastValidDetectionTime = Date.now();
-
     if (this.pointingGenderButton) {
       const elapsed = Date.now() - this.pointingStartTime;
       this.pointingProgress = Math.min((elapsed / this.POINTING_SELECTION_DELAY) * 100, 100);
-
       if (elapsed >= this.POINTING_SELECTION_DELAY) {
         this.onChangeGender();
         this.forceResetPointingState();
@@ -289,75 +259,62 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  private normalizedToScreen(normalizedX: number, normalizedY: number): { x: number, y: number } {
+  private normalizedToScreen(normalizedX: number, normalizedY: number): { x: number; y: number } {
     const screenX = window.innerWidth * normalizedX;
     let screenY: number;
-
     if (this.selectedGender === null) {
       screenY = window.innerHeight * normalizedY;
     } else {
       screenY = (window.innerHeight - this.HEADER_HEIGHT) * normalizedY + this.HEADER_HEIGHT;
     }
-
     return { x: screenX, y: screenY };
   }
 
   private detectGenderAtPosition(x: number, y: number): GarmentGender | null {
     const genderElements = document.querySelectorAll('.gender-card');
-
     for (let i = 0; i < genderElements.length; i++) {
       const element = genderElements[i] as HTMLElement;
       const rect = element.getBoundingClientRect();
-
       const expandedRect = {
         left: rect.left - this.HIT_AREA_MARGIN,
         right: rect.right + this.HIT_AREA_MARGIN,
         top: rect.top - this.HIT_AREA_MARGIN,
         bottom: rect.bottom + this.HIT_AREA_MARGIN
       };
-
       if (x >= expandedRect.left && x <= expandedRect.right &&
           y >= expandedRect.top && y <= expandedRect.bottom) {
         return this.genderOptions[i];
       }
     }
-
     return null;
   }
 
   private detectCategoryAtPosition(x: number, y: number): GarmentCategory | null {
     if (!this.categorySidebar) return null;
-
     const sidebarElement = document.querySelector('app-category-sidebar');
     if (!sidebarElement) return null;
-
     const categoryElements = sidebarElement.querySelectorAll('.category-item');
-
     for (let i = 0; i < categoryElements.length; i++) {
       const element = categoryElements[i] as HTMLElement;
       const rect = element.getBoundingClientRect();
-
       const expandedRect = {
         left: rect.left - this.HIT_AREA_MARGIN,
         right: rect.right + this.HIT_AREA_MARGIN,
         top: rect.top - this.HIT_AREA_MARGIN,
         bottom: rect.bottom + this.HIT_AREA_MARGIN
       };
-
       if (x >= expandedRect.left && x <= expandedRect.right &&
           y >= expandedRect.top && y <= expandedRect.bottom) {
         const category = this.categories[i];
         return category;
       }
     }
-
     return null;
   }
 
   private detectGenderButtonAtPosition(x: number, y: number): boolean {
     const buttonElement = document.querySelector('.change-gender-btn');
     if (!buttonElement) return false;
-
     const rect = buttonElement.getBoundingClientRect();
     const expandedRect = {
       left: rect.left - this.HIT_AREA_MARGIN,
@@ -365,20 +322,20 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       top: rect.top - this.HIT_AREA_MARGIN,
       bottom: rect.bottom + this.HIT_AREA_MARGIN
     };
-
     return x >= expandedRect.left && x <= expandedRect.right &&
         y >= expandedRect.top && y <= expandedRect.bottom;
   }
 
   private resetPointingStateWithGracePeriod(): void {
     const timeSinceLastDetection = Date.now() - this.lastValidDetectionTime;
-    if (timeSinceLastDetection > this.RESET_GRACE_PERIOD) {
+    if (timeSinceLastDetection >= this.RESET_GRACE_PERIOD) {
       this.forceResetPointingState();
     }
   }
 
   private forceResetPointingState(): void {
-    if (this.pointingCategory !== null || this.pointingGender !== null || this.pointingGenderButton || this.pointingProgress > 0) {
+    if (this.pointingCategory !== null || this.pointingGender !== null ||
+        this.pointingGenderButton || this.pointingProgress > 0) {
       this.pointingCategory = null;
       this.pointingGender = null;
       this.pointingGenderButton = false;
@@ -397,18 +354,27 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   onGarmentSelected(garment: Garment | null): void {
+    const newMap = new Map(this.selectedGarments);
+
     if (garment === null) {
-      this.selectedGarments.set(this.selectedCategory, null);
+      newMap.set(this.selectedCategory, null);
     } else {
-      this.selectedGarments.set(garment.category, garment);
+      if (garment.category === GarmentCategory.FULL_BODY) {
+        newMap.set(GarmentCategory.UPPER_BODY, null);
+        newMap.set(GarmentCategory.LOWER_BODY, null);
+        newMap.set(GarmentCategory.FULL_BODY, garment);
+      } else if (garment.category === GarmentCategory.UPPER_BODY ||
+          garment.category === GarmentCategory.LOWER_BODY) {
+        newMap.set(GarmentCategory.FULL_BODY, null);
+        newMap.set(garment.category, garment);
+      }
     }
 
-    this.selectedGarments = new Map(this.selectedGarments);
+    this.selectedGarments = newMap;
   }
 
   private navigateGarments(direction: number): void {
     if (!this.galleryBar) return;
-
     if (direction > 0) {
       this.galleryBar.navigateNext();
     } else {

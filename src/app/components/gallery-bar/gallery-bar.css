@@ -55,7 +55,7 @@
   flex-shrink: 0;
   width: 150px;
   height: 150px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 1);
   border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
@@ -93,7 +93,7 @@
 .item-name {
   padding: 8px;
   font-size: 12px;
-  color: #fff;
+  color: black;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;

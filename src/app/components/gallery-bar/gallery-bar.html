@@ -1,27 +1,32 @@
 <div class="gallery-container">
-    <div *ngIf="isLoading" class="loading-indicator">
-        <p>Cargando prendas...</p>
-    </div>
+    @if (isLoading) {
+        <div class="loading-indicator">
+            <p>Cargando prendas...</p>
+        </div>
+    }
 
-    <div *ngIf="!isLoading" class="gallery-scroll" #galleryScroll>
-        <div class="gallery-items">
-            <div *ngFor="let item of filteredItems; let i = index"
-                 class="gallery-item"
-                 [class]="getItemClass(i)"
-                 [class.selected]="isItemSelected(item)"
-                 [class.no-garment]="item === null"
-                 (click)="onItemClick(item, $event)">
+    @if (!isLoading) {
+        <div class="gallery-scroll" #galleryScroll>
+            <div class="gallery-items">
+                @for (item of filteredItems; track item; let i = $index) {
+                    <div class="gallery-item"
+                         [class]="getItemClass(i)"
+                         [class.selected]="isItemSelected(item)"
+                         [class.no-garment]="item === null"
+                         (click)="onItemClick(item, $event)">
 
-                <ng-container *ngIf="item === null">
-                    <div class="no-garment-icon">✖</div>
-                    <div class="item-name">Sin prenda</div>
-                </ng-container>
+                        @if (item === null) {
+                            <div class="no-garment-icon">✖</div>
+                            <div class="item-name">Sin prenda</div>
+                        }
 
-                <ng-container *ngIf="item !== null">
-                    <img [src]="item.imagePath" [alt]="item.name" />
-                    <div class="item-name">{{ item.name }}</div>
-                </ng-container>
+                        @if (item !== null) {
+                            <img [src]="item.imagePath" [alt]="item.name" />
+                            <div class="item-name">{{ item.name }}</div>
+                        }
+                    </div>
+                }
             </div>
         </div>
-    </div>
+    }
 </div>

@@ -42,8 +42,8 @@ html, body {
 ::ng-deep app-category-sidebar {
     display: block !important;
     position: fixed;
-    right: 0;
-    top: 0;
+    right: 20%;
+    top: 5%;
     bottom: 0;
     z-index: 1000;
 }

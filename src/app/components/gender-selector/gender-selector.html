@@ -4,22 +4,25 @@
         <p class="subtitle">Elige para ver prendas personalizadas</p>
 
         <div class="gender-options">
-            <button
-                    *ngFor="let gender of genderOptions"
-                    class="gender-card"
-                    [class.male]="gender === GarmentGender.MALE"
-                    [class.female]="gender === GarmentGender.FEMALE"
-                    [class.unisex]="gender === GarmentGender.UNISEX"
-                    [class.pointing]="isPointing(gender)"
-                    (click)="onSelectGender(gender)">
+            @for (gender of genderOptions; track gender) {
+                <button
+                        class="gender-card"
+                        [class.male]="gender === GarmentGender.MALE"
+                        [class.female]="gender === GarmentGender.FEMALE"
+                        [class.unisex]="gender === GarmentGender.UNISEX"
+                        [class.pointing]="isPointing(gender)"
+                        (click)="onSelectGender(gender)">
 
-                <div class="gender-icon">{{ getGenderIcon(gender) }}</div>
-                <span class="gender-label">{{ getGenderLabel(gender) }}</span>
+                    <div class="gender-icon">{{ getGenderIcon(gender) }}</div>
+                    <span class="gender-label">{{ getGenderLabel(gender) }}</span>
 
-                <div class="pointing-progress" *ngIf="isPointing(gender)">
-                    <div class="progress-bar" [style.width.%]="pointingProgress"></div>
-                </div>
-            </button>
+                    @if (isPointing(gender)) {
+                        <div class="pointing-progress">
+                            <div class="progress-bar" [style.width.%]="pointingProgress"></div>
+                        </div>
+                    }
+                </button>
+            }
         </div>
 
         <p class="instruction">Apunta con el dedo para seleccionar</p>

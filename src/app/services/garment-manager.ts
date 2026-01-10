@@ -60,6 +60,37 @@ export class GarmentManagerService {
         if (garment.category === GarmentCategory.LOWER_BODY) {
             const waistAnchor = new THREE.Vector3(center.x, bbox.max.y, center.z);
             inner.position.sub(waistAnchor);
+        } else if (garment.category === GarmentCategory.FULL_BODY || garment.category === GarmentCategory.UPPER_BODY) {
+            const skeleton = this.findSkeletonFromModel(inner);
+            if (skeleton) {
+                const leftShoulder = skeleton.bones.find(b =>
+                    b.name.toLowerCase().includes('leftshoulder') ||
+                    b.name.toLowerCase().includes('left shoulder') ||
+                    b.name.toLowerCase().includes('shoulder_l')
+                );
+                const rightShoulder = skeleton.bones.find(b =>
+                    b.name.toLowerCase().includes('rightshoulder') ||
+                    b.name.toLowerCase().includes('right shoulder') ||
+                    b.name.toLowerCase().includes('shoulder_r')
+                );
+
+                if (leftShoulder && rightShoulder) {
+                    const leftPos = new THREE.Vector3();
+                    const rightPos = new THREE.Vector3();
+                    leftShoulder.getWorldPosition(leftPos);
+                    rightShoulder.getWorldPosition(rightPos);
+                    const shoulderCenter = new THREE.Vector3(
+                        (leftPos.x + rightPos.x) / 2,
+                        (leftPos.y + rightPos.y) / 2,
+                        (leftPos.z + rightPos.z) / 2
+                    );
+                    inner.position.sub(shoulderCenter);
+                } else {
+                    inner.position.sub(center);
+                }
+            } else {
+                inner.position.sub(center);
+            }
         } else {
             inner.position.sub(center);
         }
@@ -163,16 +194,16 @@ export class GarmentManagerService {
         const targetScale = new THREE.Vector3(scale, scale, scale);
         entry.root.scale.lerp(targetScale, this.smoothing);
 
-        const torsoCenter = {
+        const shoulderCenter = {
             x: (pose2d[11].x + pose2d[12].x) * 0.5,
-            y: (pose2d[11].y + pose2d[12].y + pose2d[23].y + pose2d[24].y) * 0.25
+            y: (pose2d[11].y + pose2d[12].y) * 0.5
         };
 
         const shoulderZ = (pose3d[11].z + pose3d[12].z) * 0.5;
         const targetZ = this.zPlane + shoulderZ * 2.5;
 
-        const x = (torsoCenter.x - 0.5) * planeWidth;
-        const y = (0.5 - torsoCenter.y) * planeHeight;
+        const x = (shoulderCenter.x - 0.5) * planeWidth;
+        const y = (0.5 - shoulderCenter.y) * planeHeight;
 
         const targetPos = new THREE.Vector3(x, y, targetZ);
         entry.root.position.lerp(targetPos, this.smoothing);
@@ -209,6 +240,10 @@ export class GarmentManagerService {
         entry.root.rotation.z = THREE.MathUtils.lerp(entry.root.rotation.z, 0, this.smoothing);
 
         this.skeletonRetarget.updateSkeleton(entry.root, pose3d, 'upper', garmentId);
+
+        if (entry.category === GarmentCategory.FULL_BODY) {
+            this.skeletonRetarget.updateSkeleton(entry.root, pose3d, 'lower', garmentId);
+        }
     }
 
     private updateLowerBodyGarment(

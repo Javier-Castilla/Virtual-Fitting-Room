@@ -1,43 +1,62 @@
 <div class="sidebar">
-    <div class="gender-section" *ngIf="selectedGender">
-        <div class="gender-badge">
-            {{ getGenderLabel() }}
-        </div>
-        <button
-                class="change-gender-btn"
-                [class.pointing]="pointingGenderButton"
-                (click)="onChangeGender()"
-                title="Cambiar género">
-            <span class="icon">🔄</span>
-            <div class="pointing-indicator" *ngIf="pointingGenderButton">
-                <div class="progress-circle" [style.background]="'conic-gradient(#667eea ' + pointingProgress + '%, transparent 0)'"></div>
+    @if (selectedGender) {
+        <div class="gender-section">
+            <div class="gender-badge">
+                {{ getGenderLabel() }}
             </div>
-        </button>
-    </div>
+            <button
+                    class="change-gender-btn"
+                    [class.pointing]="pointingGenderButton"
+                    (click)="onChangeGender()"
+                    title="Cambiar género">
+                <span class="icon">🔄</span>
+                @if (pointingGenderButton) {
+                    <div class="pointing-indicator">
+                        <div class="progress-circle" [style.background]="'conic-gradient(#667eea ' + pointingProgress + '%, transparent 0)'"></div>
+                    </div>
+                }
+            </button>
+        </div>
+    }
 
     <div class="categories">
-        <div *ngFor="let category of categories"
-             class="category-item"
-             [class.selected]="isSelected(category)"
-             [class.pointing]="isPointing(category)"
-             (click)="onCategoryClick(category)">
-            <div class="category-icon">
-                <ng-container [ngSwitch]="category">
-                    <span *ngSwitchCase="'UPPER_BODY'">👕</span>
-                    <span *ngSwitchCase="'LOWER_BODY'">👖</span>
-                    <span *ngSwitchCase="'FULL_BODY'">👗</span>
-                </ng-container>
+        @for (category of categories; track category) {
+            <div class="category-item"
+                 [class.selected]="isSelected(category)"
+                 [class.pointing]="isPointing(category)"
+                 (click)="onCategoryClick(category)">
+                <div class="category-icon">
+                    @switch (category) {
+                        @case ('UPPER_BODY') {
+                            <span>👕</span>
+                        }
+                        @case ('LOWER_BODY') {
+                            <span>👖</span>
+                        }
+                        @case ('FULL_BODY') {
+                            <span>👗</span>
+                        }
+                    }
+                </div>
+                <div class="category-label">
+                    @switch (category) {
+                        @case ('UPPER_BODY') {
+                            <span>Superior</span>
+                        }
+                        @case ('LOWER_BODY') {
+                            <span>Inferior</span>
+                        }
+                        @case ('FULL_BODY') {
+                            <span>Completo</span>
+                        }
+                    }
+                </div>
+                @if (isPointing(category)) {
+                    <div class="pointing-indicator">
+                        <div class="progress-circle" [style.background]="'conic-gradient(#4CAF50 ' + pointingProgress + '%, transparent 0)'"></div>
+                    </div>
+                }
             </div>
-            <div class="category-label">
-                <ng-container [ngSwitch]="category">
-                    <span *ngSwitchCase="'UPPER_BODY'">Superior</span>
-                    <span *ngSwitchCase="'LOWER_BODY'">Inferior</span>
-                    <span *ngSwitchCase="'FULL_BODY'">Completo</span>
-                </ng-container>
-            </div>
-            <div class="pointing-indicator" *ngIf="isPointing(category)">
-                <div class="progress-circle" [style.background]="'conic-gradient(#4CAF50 ' + pointingProgress + '%, transparent 0)'"></div>
-            </div>
-        </div>
+        }
     </div>
 </div>
