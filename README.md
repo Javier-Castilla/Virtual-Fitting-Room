@@ -14,8 +14,6 @@
   <video src="https://github.com/user-attachments/assets/6d4e40c2-5ed7-4543-9f2d-588f713913c0" width="600" controls></video>
 </div>
 
-[doc/promocional.mp4](https://github.com/user-attachments/assets/6d4e40c2-5ed7-4543-9f2d-588f713913c0)
-
 <div align="center" style="font-family: 'Segoe UI', sans-serif; line-height: 1.6; margin-top: 30px;">
   <h2 style="font-size: 28px; margin-bottom: 10px;">
     Asignatura: <span>Visión por Computador</span>
