@@ -11,9 +11,7 @@
 
 <div align="center">
   <h2>🎬 Vídeo promocional</h2>
-  <video src="doc/promocional.mp4" controls width="800">
-    Tu navegador no soporta el tag de video.
-  </video>
+  <video src="doc/promocional.mp4" width="600" controls></video>
 </div>
 
 <div align="center" style="font-family: 'Segoe UI', sans-serif; line-height: 1.6; margin-top: 30px;">
