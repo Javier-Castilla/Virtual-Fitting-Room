@@ -126,6 +126,10 @@ models/
 > [!IMPORTANT]
 > Ejecuta `node generate-models-list.mjs` cada vez que añadas o elimines modelos de la carpeta `public/assets/models/`.
 
+> [!TIP]
+> En [este enlace](https://drive.google.com/file/d/1Bqqf--KZ43bl9S04Ct9SB4OcyUp7VW2g/view?usp=sharing) se puede conseguir una carpeta de assets lista para la carga de diferentes modelos 3D con imagen incluida.
+> Basta con descargar el archivo .ZIP y dejarlo bajo el dirctorio public/ del proyecto
+
 ### Cuarto paso: Ejecutar la aplicación en modo desarrollo
 ```bash
 ng serve
@@ -645,7 +649,11 @@ this.debugLogger.setDebugMode(true);
 - **npm**: 9.0.0+
 - **Angular CLI**: 20.0.0
 
+<h1 align="center">Documentación de interés</h1>
+
 <h1 align="center">Bibliografía</h1>
+ - [Memoria](doc/Trabajo_Final_VC.pdf)
+ - [Presentación PDF](doc/virual_fitting_room_Defensa_Final.pdf)
 
 ### MediaPipe
 - [MediaPipe Pose - Documentación Oficial](https://github.com/google-ai-edge/mediapipe/wiki/MediaPipe-Pose)
