@@ -140,6 +140,15 @@ La aplicación estará disponible en `http://localhost:4200/`
 > [!IMPORTANT]
 > Es necesario permitir el acceso a la cámara web cuando el navegador lo solicite.
 
+### Quinto paso: Controles
+Para ocultar el mdoo debug **pulsar la letra L**.
+Para cambiar la orientación horizontal de la cámara **pulsar la letra M**.
+
+
+```bash
+node generate-models-list.mjs
+```
+
 ### Build de producción
 ```bash
 ng build --configuration production
