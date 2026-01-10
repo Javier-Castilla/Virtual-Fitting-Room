@@ -11,7 +11,7 @@
 
 <div align="center">
   <h2>🎬 Vídeo promocional</h2>
-  <video src="doc/promocional.mp4" width="600" controls></video>
+  <video src="[doc/promocional.mp4](https://github.com/user-attachments/assets/6d4e40c2-5ed7-4543-9f2d-588f713913c0)" width="600" controls></video>
 </div>
 
 <div align="center" style="font-family: 'Segoe UI', sans-serif; line-height: 1.6; margin-top: 30px;">
