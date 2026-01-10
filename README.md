@@ -651,9 +651,10 @@ this.debugLogger.setDebugMode(true);
 
 <h1 align="center">Documentación de interés</h1>
 
+- [Memoria](doc/Trabajo_Final_VC.pdf)
+- [Presentación PDF](doc/virual_fitting_room_Defensa_Final.pdf)
+
 <h1 align="center">Bibliografía</h1>
- - [Memoria](doc/Trabajo_Final_VC.pdf)
- - [Presentación PDF](doc/virual_fitting_room_Defensa_Final.pdf)
 
 ### MediaPipe
 - [MediaPipe Pose - Documentación Oficial](https://github.com/google-ai-edge/mediapipe/wiki/MediaPipe-Pose)
