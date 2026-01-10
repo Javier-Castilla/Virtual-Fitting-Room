@@ -34,10 +34,16 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   debugMode = true;
   lastGesture = 'None';
   gestureState: GestureState = { isPeace: false, isPointing: false, handPosition: null };
+  videoFlipped = false;
+
   private animationId?: number;
   private stream?: MediaStream;
   private gestureStateSub?: Subscription;
   private updateDebugInterval?: any;
+  private videoCanvas!: HTMLCanvasElement;
+  private videoContext!: CanvasRenderingContext2D;
+  private sourceVideo!: HTMLVideoElement;
+  private updateStreamId?: number;
 
   constructor(
       private mediapipeService: MediapipeService,
@@ -50,6 +56,10 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   handleKeyDown(event: KeyboardEvent): void {
     if (event.key.toLowerCase() === 'l') {
       this.debugMode = !this.debugMode;
+      this.cdr.detectChanges();
+    }
+    if (event.key.toLowerCase() === 'f') {
+      this.videoFlipped = !this.videoFlipped;
       this.cdr.detectChanges();
     }
   }
@@ -78,13 +88,68 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private async startCamera(): Promise<void> {
+    // Crear video oculto con el stream original de la cámara
+    this.sourceVideo = document.createElement('video');
+    this.sourceVideo.autoplay = true;
+    this.sourceVideo.playsInline = true;
+
+    // Crear canvas intermedio para aplicar transformaciones
+    this.videoCanvas = document.createElement('canvas');
+    this.videoContext = this.videoCanvas.getContext('2d', { willReadFrequently: true })!;
+
+    // Obtener stream de la cámara
     this.stream = await navigator.mediaDevices.getUserMedia({
       video: { width: 1280, height: 720, facingMode: 'user' },
       audio: false
     });
-    this.videoElement.nativeElement.srcObject = this.stream;
+
+    this.sourceVideo.srcObject = this.stream;
+    await this.sourceVideo.play();
+
+    // Esperar a que el video esté listo
+    await new Promise<void>((resolve) => {
+      const checkVideo = () => {
+        if (this.sourceVideo.readyState >= 2) {
+          this.videoCanvas.width = this.sourceVideo.videoWidth;
+          this.videoCanvas.height = this.sourceVideo.videoHeight;
+          resolve();
+        } else {
+          requestAnimationFrame(checkVideo);
+        }
+      };
+      checkVideo();
+    });
+
+    // Iniciar el loop que dibuja en el canvas
+    this.updateVideoStream();
+
+    // Capturar el stream del canvas y asignarlo al video visible
+    const canvasStream = this.videoCanvas.captureStream(30);
+    this.videoElement.nativeElement.srcObject = canvasStream;
     await this.videoElement.nativeElement.play();
   }
+
+  private updateVideoStream = (): void => {
+    if (!this.sourceVideo || this.sourceVideo.readyState < 2) {
+      this.updateStreamId = requestAnimationFrame(this.updateVideoStream);
+      return;
+    }
+
+    const ctx = this.videoContext;
+    ctx.save();
+
+    // Aplicar volteo horizontal si está activo
+    if (this.videoFlipped) {
+      ctx.translate(this.videoCanvas.width, 0);
+      ctx.scale(-1, 1);
+    }
+
+    // Dibujar el frame actual del video fuente
+    ctx.drawImage(this.sourceVideo, 0, 0, this.videoCanvas.width, this.videoCanvas.height);
+    ctx.restore();
+
+    this.updateStreamId = requestAnimationFrame(this.updateVideoStream);
+  };
 
   private processFrame = (): void => {
     const video = this.videoElement.nativeElement;
@@ -176,6 +241,7 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     if (this.animationId) cancelAnimationFrame(this.animationId);
+    if (this.updateStreamId) cancelAnimationFrame(this.updateStreamId);
     if (this.updateDebugInterval) clearInterval(this.updateDebugInterval);
     this.gestureStateSub?.unsubscribe();
     this.stream?.getTracks().forEach((t) => t.stop());
