@@ -14,6 +14,7 @@ import {
 import { CommonModule } from '@angular/common';
 import { MediapipeService } from '../../services/mediapipe';
 import { GestureDetectorService, type GestureResult } from '../../services/gesture-detection';
+import { CoordinateTransformerService } from '../../services/coordinate-transformer.service';
 import { Subscription } from 'rxjs';
 import { GestureState } from "../../services/gesture-detection/gesture-detector.service";
 
@@ -28,12 +29,15 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('videoElement') videoElement!: ElementRef<HTMLVideoElement>;
   @ViewChild('canvasElement') canvasElement!: ElementRef<HTMLCanvasElement>;
   @Output() gestureDetected = new EventEmitter<GestureResult>();
+
   poseFrames = 0;
   lastPoseLen = 0;
   handsCount = 0;
   debugMode = true;
+  mirrorMode = true;
   lastGesture = 'None';
   gestureState: GestureState = { isPeace: false, isPointing: false, handPosition: null };
+
   private animationId?: number;
   private stream?: MediaStream;
   private gestureStateSub?: Subscription;
@@ -42,6 +46,7 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   constructor(
       private mediapipeService: MediapipeService,
       private gestureDetector: GestureDetectorService,
+      private coordinateTransformer: CoordinateTransformerService,
       private cdr: ChangeDetectorRef,
       private ngZone: NgZone
   ) {}
@@ -52,17 +57,26 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
       this.debugMode = !this.debugMode;
       this.cdr.detectChanges();
     }
+    if (event.key.toLowerCase() === 'm') {
+      this.mirrorMode = !this.mirrorMode;
+      this.coordinateTransformer.setMirrorMode(this.mirrorMode);
+      this.cdr.detectChanges();
+    }
   }
 
   async ngOnInit(): Promise<void> {
     await this.mediapipeService.initialize();
+    this.mirrorMode = this.coordinateTransformer.getMirrorMode();
+
     this.gestureDetector.gestureDetected$.subscribe((result: GestureResult) => {
       this.lastGesture = result.type;
       this.gestureDetected.emit(result);
     });
+
     this.gestureStateSub = this.gestureDetector.gestureState$.subscribe(state => {
       this.gestureState = state;
     });
+
     this.updateDebugInterval = setInterval(() => {
       if (this.debugMode) {
         this.cdr.detectChanges();
@@ -95,16 +109,19 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
         this.poseFrames++;
         this.lastPoseLen = pose.poseLandmarks.length;
       }
+
       const handResults = this.mediapipeService.handLandmarker?.detectForVideo(video, ts);
       const gestureResults = this.mediapipeService.gestureRecognizer?.recognizeForVideo(video, ts);
       const handsLandmarks = handResults?.landmarks ?? [];
       this.handsCount = handsLandmarks.length;
       const gestures = gestureResults?.gestures?.map(g => g?.[0] ?? null) ?? [];
+
       if (handsLandmarks.length > 0) {
         this.gestureDetector.detectGesture(handsLandmarks, gestures);
       } else {
         this.gestureDetector.detectGesture([]);
       }
+
       if (this.debugMode) {
         this.drawOverlay(handsLandmarks, pose.poseLandmarks);
       } else {
@@ -122,13 +139,17 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
     const canvas = this.canvasElement.nativeElement;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
     const video = this.videoElement.nativeElement;
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
+
     if (poseLandmarks) this.drawPose(ctx, canvas.width, canvas.height, poseLandmarks);
     if (handsLandmarks.length > 0) this.drawHands(ctx, canvas.width, canvas.height, handsLandmarks);
+
     ctx.restore();
   }
 
@@ -140,10 +161,13 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
       [23, 25], [25, 27],
       [24, 26], [26, 28]
     ];
+
     ctx.strokeStyle = '#00BFFF';
     ctx.lineWidth = 4;
+
     for (const [a, b] of links) {
-      const pa = lm[a]; const pb = lm[b];
+      const pa = lm[a];
+      const pb = lm[b];
       if (!pa || !pb) continue;
       ctx.beginPath();
       ctx.moveTo(pa.x * w, pa.y * h);
@@ -161,11 +185,13 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
       [0, 17], [17, 18], [18, 19], [19, 20],
       [5, 9], [9, 13], [13, 17]
     ];
+
     for (const hand of handsLandmarks) {
       ctx.strokeStyle = '#00FF00';
       ctx.lineWidth = 3;
       for (const [a, b] of connections) {
-        const pa = hand[a]; const pb = hand[b];
+        const pa = hand[a];
+        const pb = hand[b];
         ctx.beginPath();
         ctx.moveTo(pa.x * w, pa.y * h);
         ctx.lineTo(pb.x * w, pb.y * h);

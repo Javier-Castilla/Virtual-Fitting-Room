@@ -6,12 +6,22 @@ import { DebugLoggerService } from './debug-logger.service';
 @Injectable({ providedIn: 'root' })
 export class CoordinateTransformerService {
     private readonly SCALE_FACTOR = 2.5;
+    private mirrorMode = true;
 
     constructor(private debug: DebugLoggerService) {}
 
+    setMirrorMode(enabled: boolean): void {
+        this.mirrorMode = enabled;
+    }
+
+    getMirrorMode(): boolean {
+        return this.mirrorMode;
+    }
+
     worldToThreeJS(landmark: Landmark3D): THREE.Vector3 {
+        const xSign = this.mirrorMode ? -1 : 1;
         const result = new THREE.Vector3(
-            -landmark.x * this.SCALE_FACTOR,
+            xSign * landmark.x * this.SCALE_FACTOR,
             -landmark.y * this.SCALE_FACTOR,
             -landmark.z * this.SCALE_FACTOR
         );
@@ -53,7 +63,6 @@ export class CoordinateTransformerService {
         ).normalize();
 
         const forward = new THREE.Vector3().crossVectors(shoulderVec, spineVec).normalize();
-
         const rotY = Math.atan2(forward.x, forward.z);
         const rotX = Math.atan2(spineVec.z, Math.sqrt(spineVec.x ** 2 + spineVec.y ** 2));
         const rotZ = Math.atan2(shoulderVec.y, Math.sqrt(shoulderVec.x ** 2 + shoulderVec.z ** 2));

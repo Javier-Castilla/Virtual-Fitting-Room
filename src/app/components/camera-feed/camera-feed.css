@@ -25,7 +25,7 @@ video {
 .debug-panel {
     position: absolute;
     top: 80px;
-    left: 20px;  /* ← CAMBIADO DE right A left */
+    left: 20px;
     width: 280px;
     background: rgba(0, 0, 0, 0.9);
     border: 2px solid #00ff88;

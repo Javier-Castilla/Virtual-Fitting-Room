@@ -1,50 +1,56 @@
-<div class="camera-container">
+<div class="video-container">
     <video #videoElement autoplay playsinline muted></video>
     <canvas #canvasElement class="overlay-canvas"></canvas>
 
-    @if (debugMode) {
-        <div class="debug-panel">
-            <div class="debug-header">DEBUG PANEL</div>
+    <div class="debug-panel" *ngIf="debugMode">
+        <div class="debug-header">DEBUG INFO</div>
 
-            <div class="debug-section">
-                <div class="section-title">Detection Stats</div>
-                <div class="debug-item">
-                    <span class="label">Pose Frames:</span>
-                    <span class="value" [class.active]="poseFrames > 0">{{ poseFrames }}</span>
-                </div>
-                <div class="debug-item">
-                    <span class="label">Landmarks:</span>
-                    <span class="value">{{ lastPoseLen }}</span>
-                </div>
-                <div class="debug-item">
-                    <span class="label">Hands:</span>
-                    <span class="value" [class.active]="handsCount > 0">{{ handsCount }}</span>
-                </div>
+        <div class="debug-section">
+            <div class="section-title">Pose Detection</div>
+            <div class="debug-item">
+                <span class="label">Frames:</span>
+                <span class="value active">{{ poseFrames }}</span>
             </div>
-
-            <div class="debug-section">
-                <div class="section-title">Gesture State</div>
-                <div class="debug-item">
-                    <span class="label">Last Gesture:</span>
-                    <span class="value">{{ lastGesture }}</span>
-                </div>
-                <div class="debug-item">
-                    <span class="label">Peace:</span>
-                    <span class="value" [class.active]="gestureState.isPeace">
-            {{ gestureState.isPeace ? 'Yes' : 'No' }}
-          </span>
-                </div>
-                <div class="debug-item">
-                    <span class="label">Pointing:</span>
-                    <span class="value" [class.active]="gestureState.isPointing">
-            {{ gestureState.isPointing ? 'Yes' : 'No' }}
-          </span>
-                </div>
-            </div>
-
-            <div class="debug-footer">
-                Press <kbd>L</kbd> to toggle debug
+            <div class="debug-item">
+                <span class="label">Landmarks:</span>
+                <span class="value">{{ lastPoseLen }}</span>
             </div>
         </div>
-    }
+
+        <div class="debug-section">
+            <div class="section-title">Hand Detection</div>
+            <div class="debug-item">
+                <span class="label">Hands:</span>
+                <span class="value" [class.active]="handsCount > 0">{{ handsCount }}</span>
+            </div>
+            <div class="debug-item">
+                <span class="label">Gesture:</span>
+                <span class="value" [class.active]="lastGesture !== 'None'">{{ lastGesture }}</span>
+            </div>
+        </div>
+
+        <div class="debug-section">
+            <div class="section-title">Gesture State</div>
+            <div class="debug-item">
+                <span class="label">Peace:</span>
+                <span class="value" [class.active]="gestureState.isPeace">{{ gestureState.isPeace ? 'YES' : 'NO' }}</span>
+            </div>
+            <div class="debug-item">
+                <span class="label">Pointing:</span>
+                <span class="value" [class.active]="gestureState.isPointing">{{ gestureState.isPointing ? 'YES' : 'NO' }}</span>
+            </div>
+        </div>
+
+        <div class="debug-section">
+            <div class="section-title">Display Mode</div>
+            <div class="debug-item">
+                <span class="label">Mirror:</span>
+                <span class="value" [class.active]="mirrorMode">{{ mirrorMode ? 'ON' : 'OFF' }}</span>
+            </div>
+        </div>
+
+        <div class="debug-footer">
+            Press <kbd>L</kbd> to toggle debug | <kbd>M</kbd> to toggle mirror
+        </div>
+    </div>
 </div>
