@@ -176,7 +176,6 @@ Los archivos de producción se generarán en el directorio `dist/`.
     │   │   ├── coordinate-transformer.service.ts # Conversión de coordenadas
     │   │   ├── garments-catalog.service.ts       # Carga del catálogo
     │   │   ├── model-loader.ts                   # Carga de modelos GLTF
-    │   │   ├── landmark-smoother.service.ts      # Suavizado de landmarks
     │   │   ├── debug-logger.service.ts           # Modo debug
     │   │   └── threejs.ts                        # Configuración Three.js
     │   └── services/recognizers/
