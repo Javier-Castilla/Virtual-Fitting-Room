@@ -40,10 +40,9 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   private stream?: MediaStream;
   private gestureStateSub?: Subscription;
   private updateDebugInterval?: any;
-  private videoCanvas!: HTMLCanvasElement;
-  private videoContext!: CanvasRenderingContext2D;
   private sourceVideo!: HTMLVideoElement;
-  private updateStreamId?: number;
+  private flipCanvas!: HTMLCanvasElement;
+  private flipContext!: CanvasRenderingContext2D;
 
   constructor(
       private mediapipeService: MediapipeService,
@@ -60,6 +59,7 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
     }
     if (event.key.toLowerCase() === 'f') {
       this.videoFlipped = !this.videoFlipped;
+      this.updateTransform();
       this.cdr.detectChanges();
     }
   }
@@ -88,88 +88,117 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private async startCamera(): Promise<void> {
-    // Crear video oculto con el stream original de la cámara
+    // Video oculto que recibe el stream original
     this.sourceVideo = document.createElement('video');
     this.sourceVideo.autoplay = true;
     this.sourceVideo.playsInline = true;
 
-    // Crear canvas intermedio para aplicar transformaciones
-    this.videoCanvas = document.createElement('canvas');
-    this.videoContext = this.videoCanvas.getContext('2d', { willReadFrequently: true })!;
+    // Canvas intermedio optimizado
+    this.flipCanvas = document.createElement('canvas');
+    this.flipContext = this.flipCanvas.getContext('2d', {
+      alpha: false,
+      desynchronized: true  // Permite renderizado asíncrono
+    })!;
 
     // Obtener stream de la cámara
     this.stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 1280, height: 720, facingMode: 'user' },
+      video: {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        facingMode: 'user'
+      },
       audio: false
     });
 
     this.sourceVideo.srcObject = this.stream;
-    await this.sourceVideo.play();
 
-    // Esperar a que el video esté listo
+    // Setup cuando metadata esté lista (como en StackOverflow)
     await new Promise<void>((resolve) => {
-      const checkVideo = () => {
-        if (this.sourceVideo.readyState >= 2) {
-          this.videoCanvas.width = this.sourceVideo.videoWidth;
-          this.videoCanvas.height = this.sourceVideo.videoHeight;
-          resolve();
-        } else {
-          requestAnimationFrame(checkVideo);
-        }
-      };
-      checkVideo();
+      this.sourceVideo.addEventListener('loadedmetadata', () => {
+        this.flipCanvas.width = this.sourceVideo.videoWidth;
+        this.flipCanvas.height = this.sourceVideo.videoHeight;
+
+        // Aplicar transformación UNA VEZ (no en cada frame)
+        this.updateTransform();
+
+        console.log('Canvas:', this.flipCanvas.width, 'x', this.flipCanvas.height);
+        resolve();
+      }, { once: true });
     });
 
-    // Iniciar el loop que dibuja en el canvas
-    this.updateVideoStream();
+    await this.sourceVideo.play();
 
-    // Capturar el stream del canvas y asignarlo al video visible
-    const canvasStream = this.videoCanvas.captureStream(30);
+    // Iniciar loop de renderizado
+    this.startRenderLoop();
+
+    // Capturar stream del canvas
+    const canvasStream = this.flipCanvas.captureStream(0); // 0 = on-demand
     this.videoElement.nativeElement.srcObject = canvasStream;
     await this.videoElement.nativeElement.play();
   }
 
-  private updateVideoStream = (): void => {
-    if (!this.sourceVideo || this.sourceVideo.readyState < 2) {
-      this.updateStreamId = requestAnimationFrame(this.updateVideoStream);
-      return;
-    }
+  // Aplicar transformación UNA SOLA VEZ cuando cambia el flip
+  private updateTransform(): void {
+    if (!this.flipContext) return;
 
-    const ctx = this.videoContext;
-    ctx.save();
+    const w = this.flipCanvas.width;
 
-    // Aplicar volteo horizontal si está activo
+    // Resetear y aplicar nueva transformación
+    this.flipContext.setTransform(1, 0, 0, 1, 0, 0);
+
     if (this.videoFlipped) {
-      ctx.translate(this.videoCanvas.width, 0);
-      ctx.scale(-1, 1);
+      this.flipContext.translate(w, 0);
+      this.flipContext.scale(-1, 1);
     }
+  }
 
-    // Dibujar el frame actual del video fuente
-    ctx.drawImage(this.sourceVideo, 0, 0, this.videoCanvas.width, this.videoCanvas.height);
-    ctx.restore();
+  // Loop simple de renderizado (sin save/restore en cada frame)
+  private startRenderLoop(): void {
+    const render = () => {
+      if (this.sourceVideo && !this.sourceVideo.paused && !this.sourceVideo.ended) {
+        // Simplemente dibujar - la transformación ya está aplicada
+        this.flipContext.drawImage(
+            this.sourceVideo,
+            0, 0,
+            this.flipCanvas.width,
+            this.flipCanvas.height
+        );
 
-    this.updateStreamId = requestAnimationFrame(this.updateVideoStream);
-  };
+        // Forzar captura de frame en el stream
+        const track = (this.videoElement.nativeElement.srcObject as MediaStream)?.getVideoTracks()[0];
+        if (track && 'requestFrame' in track) {
+          (track as any).requestFrame();
+        }
+      }
+      requestAnimationFrame(render);
+    };
+
+    requestAnimationFrame(render);
+  }
 
   private processFrame = (): void => {
     const video = this.videoElement.nativeElement;
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
       const ts = performance.now();
+
       const pose = this.mediapipeService.detectPose(video, ts);
       if (pose.poseLandmarks) {
         this.poseFrames++;
         this.lastPoseLen = pose.poseLandmarks.length;
       }
+
       const handResults = this.mediapipeService.handLandmarker?.detectForVideo(video, ts);
       const gestureResults = this.mediapipeService.gestureRecognizer?.recognizeForVideo(video, ts);
       const handsLandmarks = handResults?.landmarks ?? [];
       this.handsCount = handsLandmarks.length;
       const gestures = gestureResults?.gestures?.map(g => g?.[0] ?? null) ?? [];
+
       if (handsLandmarks.length > 0) {
         this.gestureDetector.detectGesture(handsLandmarks, gestures);
       } else {
         this.gestureDetector.detectGesture([]);
       }
+
       if (this.debugMode) {
         this.drawOverlay(handsLandmarks, pose.poseLandmarks);
       } else {
@@ -241,7 +270,6 @@ export class CameraFeedComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     if (this.animationId) cancelAnimationFrame(this.animationId);
-    if (this.updateStreamId) cancelAnimationFrame(this.updateStreamId);
     if (this.updateDebugInterval) clearInterval(this.updateDebugInterval);
     this.gestureStateSub?.unsubscribe();
     this.stream?.getTracks().forEach((t) => t.stop());
