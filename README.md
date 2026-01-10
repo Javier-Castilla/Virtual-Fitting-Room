@@ -9,11 +9,6 @@
 
 <img src="doc/caratula.jpg">
 
-<div align="center">
-  <h2>🎬 Vídeo promocional</h2>
-  <video src="https://github.com/user-attachments/assets/6d4e40c2-5ed7-4543-9f2d-588f713913c0" width="600" controls></video>
-</div>
-
 <div align="center" style="font-family: 'Segoe UI', sans-serif; line-height: 1.6; margin-top: 30px;">
   <h2 style="font-size: 28px; margin-bottom: 10px;">
     Asignatura: <span>Visión por Computador</span>
@@ -47,6 +42,11 @@ Sistema de probador virtual en tiempo real basado en tecnologías web que permit
 [![CLO3D](https://img.shields.io/badge/CLO3D-FF6B35?style=for-the-badge&logo=clo&logoColor=white)](https://www.clo3d.com/)
 [![Blender](https://img.shields.io/badge/Blender-F5792A?style=for-the-badge&logo=blender&logoColor=white)](https://www.blender.org/)
 [![GLTF](https://img.shields.io/badge/GLTF-005F9E?style=for-the-badge&logo=khronosgroup&logoColor=white)](https://www.khronos.org/gltf/)
+
+<div align="center">
+  <h2>🎬 Vídeo promocional</h2>
+  <video src="https://github.com/user-attachments/assets/6d4e40c2-5ed7-4543-9f2d-588f713913c0" width="600" controls></video>
+</div>
 
 ## Características Principales
 
